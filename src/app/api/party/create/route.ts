@@ -1,7 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
 
 function generateCode(): string {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -30,44 +27,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Находим или создаем пользователя
-    let user = await prisma.user.findUnique({
-      where: { worldId: hostWorldId }
-    });
+    // Временно: создаем party без БД
+    const party = {
+      id: `party_${Date.now()}`,
+      code: generateCode(),
+      name: name,
+      hostWorldId: hostWorldId,
+      createdAt: new Date().toISOString(),
+      participants: 1
+    };
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          worldId: hostWorldId,
-          displayName: `Host_${hostWorldId.slice(0, 6)}`
-        }
-      });
-    }
-
-    // Создаем party
-    const party = await prisma.party.create({
-      data: {
-        name,
-        code: generateCode(),
-        hostId: user.id,
-        status: 'WAITING'
-      }
-    });
-
-    // Добавляем хоста как участника
-    await prisma.participant.create({
-      data: {
-        userId: user.id,
-        partyId: party.id
-      }
-    });
+    console.log('🎉 Party created:', party);
 
     return NextResponse.json({
       success: true,
       party: {
         id: party.id,
         code: party.code,
-        name: party.name
+        name: party.name,
+        participants: party.participants
       }
     });
 

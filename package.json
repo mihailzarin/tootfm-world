@@ -11,13 +11,11 @@
     "socket:dev": "nodemon src/server/socket.js"
   },
   "dependencies": {
-    "@prisma/client": "^6.14.0",
     "@types/spotify-web-api-node": "^5.0.11",
     "@worldcoin/idkit": "^2.4.1",
     "@worldcoin/minikit-js": "^1.9.6",
     "nanoid": "^5.1.5",
     "next": "15.4.6",
-    "prisma": "^6.14.0",
     "qrcode": "^1.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
