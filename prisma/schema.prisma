@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id          String   @id @default(cuid())
+  worldId     String   @unique
+  displayName String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  spotifyId        String?
+  spotifyToken     String?
+  appleMusicId     String?
+  appleMusicToken  String?
+  youtubeId        String?
+  youtubeToken     String?
+  preferredService String?
+  
+  lastfmUsername   String?
+  lastfmKey        String?
+  lastfmScrobbling Boolean @default(true)
+  
+  hostedParties Party[]       @relation("PartyHost")
+  participants  Participant[]
+  tracks        Track[]
+  votes         Vote[]
+  scrobbles     Scrobble[]
+  musicProfile  MusicProfile?
+}
+
+model Party {
+  id        String      @id @default(cuid())
+  code      String      @unique
+  name      String
+  status    String      @default("WAITING")
+  
+  allowSpotify     Boolean @default(true)
+  allowAppleMusic  Boolean @default(true)
+  allowYouTube     Boolean @default(true)
+  hostService      String?
+  
+  enableScrobbling Boolean @default(true)
+  shareStats       Boolean @default(true)
+  
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  
+  hostId       String
+  host         User          @relation("PartyHost", fields: [hostId], references: [id])
+  participants Participant[]
+  tracks       Track[]
+  currentTrackId String?
+}
+
+model Participant {
+  id        String   @id @default(cuid())
+  joinedAt  DateTime @default(now())
+  
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+  partyId String
+  party   Party  @relation(fields: [partyId], references: [id])
+  
+  @@unique([userId, partyId])
+}
+
+model Track {
+  id         String   @id @default(cuid())
+  title      String
+  artist     String
+  album      String?
+  duration   Int      @default(0)
+  thumbnail  String?
+  
+  spotifyUri  String?
+  appleId     String?
+  youtubeId   String?
+  
+  lastfmUrl   String?
+  playCount   Int      @default(0)
+  tags        String?
+  
+  source      String
+  
+  playedAt   DateTime?
+  position   Int      @default(0)
+  addedAt    DateTime @default(now())
+  
+  partyId   String
+  party     Party  @relation(fields: [partyId], references: [id])
+  addedById String
+  addedBy   User   @relation(fields: [addedById], references: [id])
+  votes     Vote[]
+  scrobbles Scrobble[]
+}
+
+model Scrobble {
+  id         String   @id @default(cuid())
+  timestamp  DateTime @default(now())
+  submitted  Boolean  @default(false)
+  
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+  trackId String
+  track   Track  @relation(fields: [trackId], references: [id])
+  
+  @@index([userId, timestamp])
+}
+
+model MusicProfile {
+  id            String   @id @default(cuid())
+  topGenres     String?
+  topArtists    String?
+  totalScrobbles Int     @default(0)
+  weeklyAverage  Int     @default(0)
+  favoriteTime   String?
+  compatibility  Float?
+  lastUpdated    DateTime @default(now())
+  
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  value     Int
+  createdAt DateTime @default(now())
+  
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+  trackId String
+  track   Track  @relation(fields: [trackId], references: [id])
+  
+  @@unique([userId, trackId])
+}

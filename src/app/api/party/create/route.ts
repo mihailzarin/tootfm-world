@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-// Временное хранилище в памяти (пока без БД)
-const parties = new Map();
+import { prisma } from '@/lib/prisma';
 
 function generateCode(): string {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -23,29 +21,43 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name, hostWorldId } = body;
 
-    if (!hostWorldId || !name) {
+    if (!name) {
       return NextResponse.json(
-        { error: 'Name and World ID required' },
+        { error: 'Name required' },
         { status: 400 }
       );
     }
 
-    const partyId = `party_${Date.now()}`;
-    const partyCode = generateCode();
-    
-    const party = {
-      id: partyId,
-      code: partyCode,
-      name: name,
-      hostWorldId: hostWorldId,
-      status: 'WAITING',
-      createdAt: new Date().toISOString(),
-      participants: 1
-    };
+    const worldId = hostWorldId || `demo_${Date.now()}`;
 
-    parties.set(partyCode, party);
-    
-    console.log('Party created:', party);
+    let user = await prisma.user.findUnique({
+      where: { worldId }
+    });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          worldId,
+          displayName: `Host_${worldId.slice(0, 6)}`
+        }
+      });
+    }
+
+    const party = await prisma.party.create({
+      data: {
+        name,
+        code: generateCode(),
+        hostId: user.id,
+        status: 'WAITING'
+      }
+    });
+
+    await prisma.participant.create({
+      data: {
+        userId: user.id,
+        partyId: party.id
+      }
+    });
 
     return NextResponse.json({
       success: true,
@@ -66,8 +78,35 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  return NextResponse.json({
-    status: 'Party API is working',
-    parties: parties.size
-  });
+  try {
+    const parties = await prisma.party.findMany({
+      take: 10,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        host: true,
+        _count: {
+          select: { participants: true }
+        }
+      }
+    });
+
+    return NextResponse.json({ 
+      status: 'Party API working',
+      parties: parties.map(p => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        host: p.host.displayName,
+        participants: p._count.participants,
+        created: p.createdAt
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching parties:', error);
+    return NextResponse.json({ 
+      status: 'Party API working',
+      parties: [],
+      error: 'Database connection issue'
+    });
+  }
 }
