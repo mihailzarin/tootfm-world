@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+// Временное хранилище в памяти (пока без БД)
+const parties = new Map();
 
 function generateCode(): string {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -30,37 +30,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Находим или создаем пользователя
-    let user = await prisma.user.findUnique({
-      where: { worldId: hostWorldId }
-    });
+    const partyId = `party_${Date.now()}`;
+    const partyCode = generateCode();
+    
+    const party = {
+      id: partyId,
+      code: partyCode,
+      name: name,
+      hostWorldId: hostWorldId,
+      status: 'WAITING',
+      createdAt: new Date().toISOString(),
+      participants: 1
+    };
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          worldId: hostWorldId,
-          displayName: `Host_${hostWorldId.slice(0, 6)}`
-        }
-      });
-    }
-
-    // Создаем party
-    const party = await prisma.party.create({
-      data: {
-        name,
-        code: generateCode(),
-        hostId: user.id,
-        status: 'WAITING'
-      }
-    });
-
-    // Добавляем хоста как участника
-    await prisma.participant.create({
-      data: {
-        userId: user.id,
-        partyId: party.id
-      }
-    });
+    parties.set(partyCode, party);
+    
+    console.log('Party created:', party);
 
     return NextResponse.json({
       success: true,
@@ -78,4 +63,11 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    status: 'Party API is working',
+    parties: parties.size
+  });
 }
