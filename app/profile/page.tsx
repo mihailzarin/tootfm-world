@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface UserData {
@@ -17,7 +17,7 @@ interface SpotifyUser {
   image?: string;
 }
 
-export default function ProfilePage() {
+function ProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -49,6 +49,7 @@ export default function ProfilePage() {
           const user = JSON.parse(decodeURIComponent(spotifyUserCookie));
           setSpotifyUser(user);
           localStorage.setItem("spotify_connected", "true");
+          localStorage.setItem("spotify_user", JSON.stringify(user));
         } catch (e) {
           console.error("Error parsing Spotify user:", e);
         }
@@ -59,7 +60,11 @@ export default function ProfilePage() {
     if (localStorage.getItem("spotify_connected")) {
       const savedSpotifyUser = localStorage.getItem("spotify_user");
       if (savedSpotifyUser) {
-        setSpotifyUser(JSON.parse(savedSpotifyUser));
+        try {
+          setSpotifyUser(JSON.parse(savedSpotifyUser));
+        } catch (e) {
+          console.error("Error loading saved Spotify user:", e);
+        }
       }
     }
 
@@ -247,5 +252,17 @@ export default function ProfilePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    }>
+      <ProfileContent />
+    </Suspense>
   );
 }
