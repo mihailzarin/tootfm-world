@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
 const SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
-
-// Используем переменные окружения - НИКОГДА не хардкодим!
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID!;
 const REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI!;
 
@@ -13,15 +11,10 @@ const SCOPES = [
   'user-top-read',
   'user-library-read',
   'user-read-recently-played',
-  'user-read-playback-state',
-  'user-modify-playback-state',
-  'streaming',
-  'playlist-read-private',
-  'playlist-read-collaborative'
+  'playlist-read-private'
 ].join(' ');
 
 export async function GET() {
-  // Проверяем наличие переменных окружения
   if (!CLIENT_ID || !REDIRECT_URI) {
     console.error('Missing Spotify environment variables');
     return NextResponse.json(
@@ -39,20 +32,24 @@ export async function GET() {
     redirect_uri: REDIRECT_URI,
     scope: SCOPES,
     state: state,
-    show_dialog: 'false' // Не показывать диалог если уже авторизован
+    show_dialog: 'false'
   });
 
   const authUrl = `${SPOTIFY_AUTH_URL}?${params.toString()}`;
   
   const response = NextResponse.redirect(authUrl);
   
-  // Сохраняем state в cookie для проверки
+  // Устанавливаем cookie с правильными параметрами для продакшена
   response.cookies.set('spotify_auth_state', state, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 10 // 10 минут
+    secure: true, // Всегда true для HTTPS
+    sameSite: 'lax', // Позволяет cookie при редиректах
+    maxAge: 60 * 10, // 10 минут
+    path: '/', // Доступен для всех путей
+    domain: '.tootfm.world' // Доступен для всех поддоменов
   });
+
+  console.log('Set state cookie:', state);
 
   return response;
 }
