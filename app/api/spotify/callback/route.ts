@@ -16,14 +16,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // ВАЖНО: Точно такие же значения как в Spotify Dashboard!
-    const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
-    const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
-    // КРИТИЧНО: Этот URL должен ТОЧНО совпадать с тем что в Spotify App Settings
+    // ИСПОЛЬЗУЕМ НОВЫЕ CREDENTIALS!
+    const CLIENT_ID = '68a7ea6587af43cc893cc0994a584eff';
+    const CLIENT_SECRET = 'cd2b848b64e743c7846009947a13459f2';
     const REDIRECT_URI = 'https://tootfm.world/api/spotify/callback';
-    
-    console.log('Exchanging code for token...');
-    console.log('Redirect URI:', REDIRECT_URI);
     
     const tokenResponse = await fetch("https://accounts.spotify.com/api/token", {
       method: "POST",
@@ -33,7 +29,7 @@ export async function GET(request: NextRequest) {
       body: new URLSearchParams({
         grant_type: "authorization_code",
         code: code,
-        redirect_uri: REDIRECT_URI, // MUST match exactly!
+        redirect_uri: REDIRECT_URI,
         client_id: CLIENT_ID,
         client_secret: CLIENT_SECRET,
       }),
@@ -42,7 +38,7 @@ export async function GET(request: NextRequest) {
     if (!tokenResponse.ok) {
       const errorData = await tokenResponse.json();
       console.error("Token error:", errorData);
-      return NextResponse.redirect(`${baseUrl}/profile?error=token_failed&details=${errorData.error}`);
+      return NextResponse.redirect(`${baseUrl}/profile?error=token_failed`);
     }
 
     const tokenData = await tokenResponse.json();
@@ -57,9 +53,8 @@ export async function GET(request: NextRequest) {
     const profileData = await profileResponse.json();
 
     // Успех!
-    const response = NextResponse.redirect(`${baseUrl}/profile?spotify=connected&name=${encodeURIComponent(profileData.display_name || 'User')}`);
+    const response = NextResponse.redirect(`${baseUrl}/profile?spotify=connected`);
 
-    // Сохраняем данные
     response.cookies.set("spotify_token", tokenData.access_token, {
       httpOnly: true,
       secure: true,
