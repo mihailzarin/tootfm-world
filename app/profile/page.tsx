@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 interface UserData {
   worldId: string;
@@ -10,10 +10,18 @@ interface UserData {
   createdAt: string;
 }
 
+interface SpotifyUser {
+  id: string;
+  name: string;
+  email: string;
+  image?: string;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [userData, setUserData] = useState<UserData | null>(null);
-  const [spotifyConnected, setSpotifyConnected] = useState(false);
+  const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null);
   const [lastfmUsername, setLastfmUsername] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -25,21 +33,62 @@ export default function ProfilePage() {
     }
     setUserData(JSON.parse(storedUserData));
 
-    // Проверяем подключенные сервисы
-    const spotifyToken = localStorage.getItem("spotify_token");
-    if (spotifyToken) setSpotifyConnected(true);
+    // Проверяем статус подключения Spotify из URL
+    const spotifyStatus = searchParams.get("spotify");
+    if (spotifyStatus === "connected") {
+      // Получаем данные Spotify из cookies
+      const getCookie = (name: string) => {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop()?.split(';').shift();
+      };
+
+      const spotifyUserCookie = getCookie("spotify_user");
+      if (spotifyUserCookie) {
+        try {
+          const user = JSON.parse(decodeURIComponent(spotifyUserCookie));
+          setSpotifyUser(user);
+          localStorage.setItem("spotify_connected", "true");
+        } catch (e) {
+          console.error("Error parsing Spotify user:", e);
+        }
+      }
+    }
+
+    // Проверяем сохранённые данные
+    if (localStorage.getItem("spotify_connected")) {
+      const savedSpotifyUser = localStorage.getItem("spotify_user");
+      if (savedSpotifyUser) {
+        setSpotifyUser(JSON.parse(savedSpotifyUser));
+      }
+    }
 
     const savedLastfm = localStorage.getItem("lastfm_username");
     if (savedLastfm) setLastfmUsername(savedLastfm);
-  }, [router]);
+
+    // Проверяем ошибки
+    const error = searchParams.get("error");
+    if (error) {
+      alert(`Ошибка подключения Spotify: ${error}`);
+    }
+  }, [router, searchParams]);
 
   const connectSpotify = () => {
     setIsLoading(true);
     const clientId = "d030154634934d92a7dc08ad9770f80f";
-    const redirectUri = encodeURIComponent(`${window.location.origin}/api/spotify/callback`);
-    const scopes = encodeURIComponent("user-read-private user-read-email user-modify-playback-state");
+    const redirectUri = encodeURIComponent(`https://tootfm.world/api/spotify/callback`);
+    const scopes = encodeURIComponent("user-read-private user-read-email user-modify-playback-state user-read-playback-state");
     
     window.location.href = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scopes}`;
+  };
+
+  const disconnectSpotify = () => {
+    setSpotifyUser(null);
+    localStorage.removeItem("spotify_connected");
+    localStorage.removeItem("spotify_user");
+    document.cookie = "spotify_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "spotify_refresh=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "spotify_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   };
 
   const connectAppleMusic = () => {
@@ -55,14 +104,9 @@ export default function ProfilePage() {
     }
   };
 
-  const disconnectService = (service: string) => {
-    if (service === "spotify") {
-      localStorage.removeItem("spotify_token");
-      setSpotifyConnected(false);
-    } else if (service === "lastfm") {
-      localStorage.removeItem("lastfm_username");
-      setLastfmUsername("");
-    }
+  const disconnectLastfm = () => {
+    setLastfmUsername("");
+    localStorage.removeItem("lastfm_username");
   };
 
   const handleLogout = () => {
@@ -119,13 +163,13 @@ export default function ProfilePage() {
                 <div>
                   <h3 className="text-white font-bold">Spotify</h3>
                   <p className="text-gray-400 text-sm">
-                    {spotifyConnected ? "Connected" : "Stream and control music"}
+                    {spotifyUser ? `Connected: ${spotifyUser.name || spotifyUser.email}` : "Stream and control music"}
                   </p>
                 </div>
               </div>
-              {spotifyConnected ? (
+              {spotifyUser ? (
                 <button
-                  onClick={() => disconnectService("spotify")}
+                  onClick={disconnectSpotify}
                   className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-4 py-2 rounded-full transition-all"
                 >
                   Disconnect
@@ -175,7 +219,7 @@ export default function ProfilePage() {
               </div>
               {lastfmUsername ? (
                 <button
-                  onClick={() => disconnectService("lastfm")}
+                  onClick={disconnectLastfm}
                   className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-4 py-2 rounded-full transition-all"
                 >
                   Disconnect
