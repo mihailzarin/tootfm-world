@@ -33,10 +33,10 @@ function ProfileContent() {
     }
     setUserData(JSON.parse(storedUserData));
 
-    // Проверяем статус подключения Spotify из URL
+    // Проверяем Spotify подключение
     const spotifyStatus = searchParams.get("spotify");
     if (spotifyStatus === "connected") {
-      // Получаем данные Spotify из cookies
+      // Читаем cookie
       const getCookie = (name: string) => {
         const value = `; ${document.cookie}`;
         const parts = value.split(`; ${name}=`);
@@ -56,14 +56,14 @@ function ProfileContent() {
       }
     }
 
-    // Проверяем сохранённые данные
+    // Загружаем сохранённые данные
     if (localStorage.getItem("spotify_connected")) {
       const savedSpotifyUser = localStorage.getItem("spotify_user");
       if (savedSpotifyUser) {
         try {
           setSpotifyUser(JSON.parse(savedSpotifyUser));
         } catch (e) {
-          console.error("Error loading saved Spotify user:", e);
+          console.error("Error loading Spotify user:", e);
         }
       }
     }
@@ -71,7 +71,7 @@ function ProfileContent() {
     const savedLastfm = localStorage.getItem("lastfm_username");
     if (savedLastfm) setLastfmUsername(savedLastfm);
 
-    // Проверяем ошибки
+    // Обработка ошибок
     const error = searchParams.get("error");
     if (error) {
       alert(`Ошибка подключения Spotify: ${error}`);
@@ -80,8 +80,9 @@ function ProfileContent() {
 
   const connectSpotify = () => {
     setIsLoading(true);
+    // ТОЛЬКО продакшен URL
+    const redirectUri = encodeURIComponent("https://tootfm.world/api/spotify/callback");
     const clientId = "d030154634934d92a7dc08ad9770f80f";
-    const redirectUri = encodeURIComponent(`https://tootfm.world/api/spotify/callback`);
     const scopes = encodeURIComponent("user-read-private user-read-email user-modify-playback-state user-read-playback-state");
     
     window.location.href = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scopes}`;
@@ -91,8 +92,8 @@ function ProfileContent() {
     setSpotifyUser(null);
     localStorage.removeItem("spotify_connected");
     localStorage.removeItem("spotify_user");
+    // Очищаем cookies
     document.cookie = "spotify_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-    document.cookie = "spotify_refresh=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     document.cookie = "spotify_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   };
 
