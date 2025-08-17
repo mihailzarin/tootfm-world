@@ -42,3 +42,7 @@ prisma/dev.db
 prisma/dev.db-journal
 *.db
 *.sqlite
+.env
+.env.local
+.env
+.env.local

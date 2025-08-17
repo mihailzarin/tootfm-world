@@ -3,218 +3,85 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id          String   @id @default(cuid())
-  worldId     String   @unique
-  displayName String?
-  avatar      String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String    @id @default(cuid())
+  worldId         String    @unique
+  credentialType  String?
+  verified        Boolean   @default(true)
+  displayName     String?
+  avatar          String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   
-  spotifyId           String?
-  spotifyToken        String?
-  spotifyRefreshToken String?
-  spotifyTokenExpiry  DateTime?
-  
-  appleMusicId     String?
-  appleMusicToken  String?
-  
-  youtubeId           String?
-  youtubeToken        String?
-  youtubeRefreshToken String?
-  youtubeTokenExpiry  DateTime?
-  
-  lastfmUsername   String?
-  lastfmKey        String?
-  lastfmScrobbling Boolean @default(true)
-  
-  preferredService String?
-  
-  hostedParties Party[]       @relation("PartyHost")
-  participants  Participant[]
-  tracks        Track[]
-  votes         Vote[]
-  scrobbles     Scrobble[]
-  musicProfile  MusicProfile?
-  userTracks    UserTrack[]
-  userArtists   UserArtist[]
-  userGenres    UserGenre[]
+  createdParties  Party[]   @relation("PartyCreator")
+  joinedParties   PartyMember[]
+  votes           Vote[]
 }
 
 model Party {
-  id        String      @id @default(cuid())
-  code      String      @unique
-  name      String
-  status    String      @default("WAITING")
+  id              String    @id @default(cuid())
+  code            String    @unique
+  name            String
+  description     String?
+  isActive        Boolean   @default(true)
+  creatorId       String
+  creator         User      @relation("PartyCreator", fields: [creatorId], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   
-  allowSpotify     Boolean @default(true)
-  allowAppleMusic  Boolean @default(true)
-  allowYouTube     Boolean @default(true)
-  hostService      String?
+  members         PartyMember[]
+  tracks          Track[]
   
-  enableScrobbling Boolean @default(true)
-  shareStats       Boolean @default(true)
-  
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  
-  hostId       String
-  host         User          @relation("PartyHost", fields: [hostId], references: [id])
-  participants Participant[]
-  tracks       Track[]
-  currentTrackId String?
+  @@index([code])
+  @@index([creatorId])
 }
 
-model Participant {
-  id        String   @id @default(cuid())
-  joinedAt  DateTime @default(now())
-  
-  userId  String
-  user    User   @relation(fields: [userId], references: [id])
-  partyId String
-  party   Party  @relation(fields: [partyId], references: [id])
+model PartyMember {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  partyId     String
+  party       Party     @relation(fields: [partyId], references: [id])
+  role        String    @default("member")
+  joinedAt    DateTime  @default(now())
   
   @@unique([userId, partyId])
+  @@index([partyId])
+  @@index([userId])
 }
 
 model Track {
-  id         String   @id @default(cuid())
-  title      String
-  artist     String
-  album      String?
-  duration   Int      @default(0)
-  thumbnail  String?
+  id              String    @id @default(cuid())
+  spotifyId       String
+  name            String
+  artist          String
+  album           String?
+  albumArt        String?
+  duration        Int
+  partyId         String
+  party           Party     @relation(fields: [partyId], references: [id])
+  addedAt         DateTime  @default(now())
+  votes           Vote[]
+  voteCount       Int       @default(0)
   
-  spotifyUri  String?
-  appleId     String?
-  youtubeId   String?
-  
-  lastfmUrl   String?
-  playCount   Int      @default(0)
-  tags        String?
-  
-  source      String
-  
-  playedAt   DateTime?
-  position   Int      @default(0)
-  addedAt    DateTime @default(now())
-  
-  partyId   String
-  party     Party  @relation(fields: [partyId], references: [id])
-  addedById String
-  addedBy   User   @relation(fields: [addedById], references: [id])
-  votes     Vote[]
-  scrobbles Scrobble[]
-}
-
-model Scrobble {
-  id         String   @id @default(cuid())
-  timestamp  DateTime @default(now())
-  submitted  Boolean  @default(false)
-  
-  userId  String
-  user    User   @relation(fields: [userId], references: [id])
-  trackId String
-  track   Track  @relation(fields: [trackId], references: [id])
-  
-  @@index([userId, timestamp])
-}
-
-model MusicProfile {
-  id            String   @id @default(cuid())
-  
-  musicPersonality  String?
-  energyLevel       Int      @default(50)
-  diversityScore    Int      @default(50)
-  listeningHours    Int      @default(0)
-  
-  topGenres         String?
-  topArtists        String?
-  topTracks         String?
-  audioFeatures     String?
-  genreDistribution String?
-  
-  totalScrobbles Int     @default(0)
-  weeklyAverage  Int     @default(0)
-  favoriteTime   String?
-  compatibility  Float?
-  
-  lastUpdated  DateTime @default(now())
-  lastAnalyzed DateTime?
-  
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
+  @@unique([spotifyId, partyId])
+  @@index([partyId])
 }
 
 model Vote {
-  id        String   @id @default(cuid())
-  value     Int
-  createdAt DateTime @default(now())
-  
-  userId  String
-  user    User   @relation(fields: [userId], references: [id])
-  trackId String
-  track   Track  @relation(fields: [trackId], references: [id])
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  trackId     String
+  track       Track     @relation(fields: [trackId], references: [id])
+  value       Int
+  createdAt   DateTime  @default(now())
   
   @@unique([userId, trackId])
-}
-
-model UserTrack {
-  id         String   @id @default(cuid())
-  externalId String
-  service    String
-  title      String
-  artist     String
-  album      String?
-  duration   Int?
-  popularity Int?
-  imageUrl   String?
-  playCount  Int      @default(1)
-  lastPlayed DateTime?
-  isFavorite Boolean  @default(false)
-  addedAt    DateTime @default(now())
-  
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-  
-  @@unique([userId, externalId, service])
-  @@index([userId, service])
-}
-
-model UserArtist {
-  id         String   @id @default(cuid())
-  externalId String
-  service    String
-  name       String
-  genres     String?
-  popularity Int?
-  imageUrl   String?
-  playCount  Int      @default(1)
-  rank       Int?
-  addedAt    DateTime @default(now())
-  
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-  
-  @@unique([userId, externalId, service])
-  @@index([userId, service])
-}
-
-model UserGenre {
-  id          String   @id @default(cuid())
-  genre       String
-  percentage  Float
-  trackCount  Int      @default(0)
-  artistCount Int      @default(0)
-  lastUpdated DateTime @default(now())
-  
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-  
-  @@unique([userId, genre])
+  @@index([trackId])
   @@index([userId])
 }
