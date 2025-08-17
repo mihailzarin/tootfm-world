@@ -8,80 +8,232 @@ datasource db {
 }
 
 model User {
-  id              String    @id @default(cuid())
-  worldId         String    @unique
-  credentialType  String?
-  verified        Boolean   @default(true)
-  displayName     String?
-  avatar          String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
-  createdParties  Party[]   @relation("PartyCreator")
-  joinedParties   PartyMember[]
-  votes           Vote[]
+  id             String         @id @default(cuid())
+  worldId        String         @unique
+  credentialType String?
+  verified       Boolean        @default(true)
+  displayName    String?
+  avatar         String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  musicProfile   MusicProfile?
+  musicServices  MusicService[]
+  createdParties Party[]        @relation("PartyCreator")
+  joinedParties  PartyMember[]
+  syncHistory    SyncHistory[]
+  votes          Vote[]
 }
 
 model Party {
-  id              String    @id @default(cuid())
-  code            String    @unique
-  name            String
-  description     String?
-  isActive        Boolean   @default(true)
-  creatorId       String
-  creator         User      @relation("PartyCreator", fields: [creatorId], references: [id])
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
-  members         PartyMember[]
-  tracks          Track[]
-  
+  id          String        @id @default(cuid())
+  code        String        @unique
+  name        String
+  description String?
+  isActive    Boolean       @default(true)
+  creatorId   String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  creator     User          @relation("PartyCreator", fields: [creatorId], references: [id])
+  members     PartyMember[]
+  tracks      Track[]
+
   @@index([code])
   @@index([creatorId])
 }
 
 model PartyMember {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  partyId     String
-  party       Party     @relation(fields: [partyId], references: [id])
-  role        String    @default("member")
-  joinedAt    DateTime  @default(now())
-  
+  id       String   @id @default(cuid())
+  userId   String
+  partyId  String
+  role     String   @default("member")
+  joinedAt DateTime @default(now())
+  party    Party    @relation(fields: [partyId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
   @@unique([userId, partyId])
   @@index([partyId])
   @@index([userId])
 }
 
 model Track {
-  id              String    @id @default(cuid())
-  spotifyId       String
-  name            String
-  artist          String
-  album           String?
-  albumArt        String?
-  duration        Int
-  partyId         String
-  party           Party     @relation(fields: [partyId], references: [id])
-  addedAt         DateTime  @default(now())
-  votes           Vote[]
-  voteCount       Int       @default(0)
-  
+  id        String   @id @default(cuid())
+  spotifyId String
+  name      String
+  artist    String
+  album     String?
+  albumArt  String?
+  duration  Int
+  partyId   String
+  addedAt   DateTime @default(now())
+  voteCount Int      @default(0)
+  party     Party    @relation(fields: [partyId], references: [id])
+  votes     Vote[]
+
   @@unique([spotifyId, partyId])
   @@index([partyId])
 }
 
 model Vote {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  trackId     String
-  track       Track     @relation(fields: [trackId], references: [id])
-  value       Int
-  createdAt   DateTime  @default(now())
-  
+  id        String   @id @default(cuid())
+  userId    String
+  trackId   String
+  value     Int
+  createdAt DateTime @default(now())
+  track     Track    @relation(fields: [trackId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
   @@unique([userId, trackId])
   @@index([trackId])
   @@index([userId])
+}
+
+model MusicService {
+  id              String      @id @default(dbgenerated("gen_random_uuid()"))
+  userId          String
+  service         ServiceType
+  accessToken     String?
+  refreshToken    String?
+  expiresAt       DateTime?
+  serviceUserId   String?
+  serviceUserName String?
+  serviceEmail    String?
+  connectedAt     DateTime    @default(now())
+  lastSyncAt      DateTime?
+  syncCount       Int         @default(0)
+  autoSync        Boolean     @default(true)
+  syncInterval    Int         @default(3600)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @default(now()) @updatedAt
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, service])
+  @@index([userId])
+  @@index([service])
+}
+
+model MusicProfile {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()"))
+  userId             String   @unique
+  topTracks          Json     @default("[]")
+  topArtists         Json     @default("[]")
+  topGenres          Json     @default("[]")
+  topAlbums          Json?
+  totalListeningTime Int?
+  uniqueTracks       Int?
+  uniqueArtists      Int?
+  averageTrackAge    Int?
+  musicPersonality   String?
+  energyLevel        Float?   @default(0.5)
+  danceability       Float?   @default(0.5)
+  diversity          Float?   @default(0.5)
+  mainstreamScore    Float?   @default(0.5)
+  genreVector        Float[]  @default([])
+  audioFeatureVector Float[]  @default([])
+  calculatedAt       DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
+  version            Int      @default(1)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model SyncHistory {
+  id           String      @id @default(dbgenerated("gen_random_uuid()"))
+  userId       String
+  service      ServiceType
+  status       SyncStatus
+  tracksAdded  Int         @default(0)
+  artistsAdded Int         @default(0)
+  errorMessage String?
+  duration     Int?
+  apiCalls     Int?
+  startedAt    DateTime    @default(now())
+  completedAt  DateTime?
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, service])
+  @@index([startedAt])
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model backup_party_20250117 {
+  id          String?
+  code        String?
+  name        String?
+  description String?
+  isActive    Boolean?
+  creatorId   String?
+  createdAt   DateTime?
+  updatedAt   DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model backup_partymember_20250117 {
+  id       String?
+  userId   String?
+  partyId  String?
+  role     String?
+  joinedAt DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model backup_track_20250117 {
+  id        String?
+  spotifyId String?
+  name      String?
+  artist    String?
+  album     String?
+  albumArt  String?
+  duration  Int?
+  partyId   String?
+  addedAt   DateTime?
+  voteCount Int?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model backup_user_20250117 {
+  id             String?
+  worldId        String?
+  credentialType String?
+  verified       Boolean?
+  displayName    String?
+  avatar         String?
+  createdAt      DateTime?
+  updatedAt      DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model backup_vote_20250117 {
+  id        String?
+  userId    String?
+  trackId   String?
+  value     Int?
+  createdAt DateTime?
+
+  @@ignore
+}
+
+enum ServiceType {
+  SPOTIFY
+  APPLE
+  LASTFM
+  YOUTUBE
+  SOUNDCLOUD
+  TIDAL
+}
+
+enum SyncStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+  IN_PROGRESS
 }

@@ -17,13 +17,31 @@ interface SpotifyUser {
   image?: string;
 }
 
+interface LastFmUser {
+  username: string;
+  profile?: {
+    displayName?: string;
+    country?: string;
+    followers?: number;
+  };
+}
+
+interface Track {
+  title: string;
+  artist: string;
+  playCount?: number;
+  imageUrl?: string;
+}
+
 function ProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null);
-  const [lastfmUsername, setLastfmUsername] = useState("");
+  const [lastfmUser, setLastfmUser] = useState<LastFmUser | null>(null);
+  const [topTracks, setTopTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingTracks, setIsLoadingTracks] = useState(false);
 
   useEffect(() => {
     const storedUserData = localStorage.getItem("user_data");
@@ -33,10 +51,9 @@ function ProfileContent() {
     }
     setUserData(JSON.parse(storedUserData));
 
-    // Проверяем Spotify подключение
+    // Проверяем Spotify
     const spotifyStatus = searchParams.get("spotify");
     if (spotifyStatus === "connected") {
-      // Читаем cookie
       const getCookie = (name: string) => {
         const value = `; ${document.cookie}`;
         const parts = value.split(`; ${name}=`);
@@ -56,6 +73,32 @@ function ProfileContent() {
       }
     }
 
+    // Проверяем Last.fm из параметров URL
+    const lastfmStatus = searchParams.get("lastfm");
+    const lastfmUsername = searchParams.get("username");
+    
+    if (lastfmStatus === "connected" && lastfmUsername) {
+      // Читаем cookie с данными Last.fm
+      const getCookie = (name: string) => {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop()?.split(';').shift();
+      };
+
+      const lastfmCookie = getCookie("lastfm_user");
+      if (lastfmCookie) {
+        try {
+          const user = JSON.parse(decodeURIComponent(lastfmCookie));
+          setLastfmUser(user);
+          localStorage.setItem("lastfm_data", JSON.stringify(user));
+          // Загружаем топ треки
+          fetchTopTracks();
+        } catch (e) {
+          console.error("Error parsing Last.fm cookie:", e);
+        }
+      }
+    }
+
     // Загружаем сохранённые данные
     if (localStorage.getItem("spotify_connected")) {
       const savedSpotifyUser = localStorage.getItem("spotify_user");
@@ -68,19 +111,42 @@ function ProfileContent() {
       }
     }
 
-    const savedLastfm = localStorage.getItem("lastfm_username");
-    if (savedLastfm) setLastfmUsername(savedLastfm);
+    // Загружаем Last.fm из localStorage
+    const savedLastfm = localStorage.getItem("lastfm_data");
+    if (savedLastfm && !lastfmUser) {
+      try {
+        const user = JSON.parse(savedLastfm);
+        setLastfmUser(user);
+        // Загружаем топ треки
+        fetchTopTracks();
+      } catch (e) {
+        console.error("Error loading Last.fm data:", e);
+      }
+    }
 
-    // Обработка ошибок
     const error = searchParams.get("error");
     if (error) {
-      alert(`Ошибка подключения Spotify: ${error}`);
+      alert(`Ошибка подключения: ${error}`);
     }
   }, [router, searchParams]);
 
+  const fetchTopTracks = async () => {
+    setIsLoadingTracks(true);
+    try {
+      const response = await fetch('/api/music/lastfm/top-tracks');
+      if (response.ok) {
+        const data = await response.json();
+        setTopTracks(data.tracks || []);
+      }
+    } catch (error) {
+      console.error('Error fetching top tracks:', error);
+    } finally {
+      setIsLoadingTracks(false);
+    }
+  };
+
   const connectSpotify = () => {
     setIsLoading(true);
-    // ТОЛЬКО продакшен URL
     const redirectUri = encodeURIComponent("https://tootfm.world/api/spotify/callback");
     const clientId = "68a7ea6587af43cc893cc0994a584eff";
     const scopes = encodeURIComponent("user-read-private user-read-email user-modify-playback-state user-read-playback-state");
@@ -92,7 +158,6 @@ function ProfileContent() {
     setSpotifyUser(null);
     localStorage.removeItem("spotify_connected");
     localStorage.removeItem("spotify_user");
-    // Очищаем cookies
     document.cookie = "spotify_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     document.cookie = "spotify_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   };
@@ -102,17 +167,16 @@ function ProfileContent() {
   };
 
   const connectLastfm = () => {
-    const username = prompt("Введите ваш Last.fm username:");
-    if (username) {
-      setLastfmUsername(username);
-      localStorage.setItem("lastfm_username", username);
-      alert(`Last.fm подключен: ${username}`);
-    }
+    setIsLoading(true);
+    // Используем настоящую OAuth авторизацию
+    window.location.href = '/api/music/lastfm/connect';
   };
 
   const disconnectLastfm = () => {
-    setLastfmUsername("");
-    localStorage.removeItem("lastfm_username");
+    setLastfmUser(null);
+    setTopTracks([]);
+    localStorage.removeItem("lastfm_data");
+    document.cookie = "lastfm_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   };
 
   const handleLogout = () => {
@@ -150,13 +214,13 @@ function ProfileContent() {
             </div>
             <div>
               <p className="text-gray-400">Verification Type</p>
-              <p className="capitalize">{userData.credentialType || "Phone"}</p>
+              <p className="capitalize">{userData.credentialType || "Orb"}</p>
             </div>
           </div>
         </div>
 
         {/* Music Services */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8">
+        <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 mb-8">
           <h2 className="text-2xl font-bold text-white mb-6">🎵 Music Services</h2>
           
           <div className="space-y-4">
@@ -219,11 +283,16 @@ function ProfileContent() {
                 <div>
                   <h3 className="text-white font-bold">Last.fm</h3>
                   <p className="text-gray-400 text-sm">
-                    {lastfmUsername ? `Connected: ${lastfmUsername}` : "Track your listening history"}
+                    {lastfmUser ? `Connected: ${lastfmUser.username}` : "Track your listening history"}
                   </p>
+                  {lastfmUser?.profile && (
+                    <p className="text-gray-500 text-xs">
+                      {lastfmUser.profile.followers} scrobbles • {lastfmUser.profile.country}
+                    </p>
+                  )}
                 </div>
               </div>
-              {lastfmUsername ? (
+              {lastfmUser ? (
                 <button
                   onClick={disconnectLastfm}
                   className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-4 py-2 rounded-full transition-all"
@@ -233,17 +302,59 @@ function ProfileContent() {
               ) : (
                 <button
                   onClick={connectLastfm}
+                  disabled={isLoading}
                   className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full transition-all"
                 >
-                  Connect
+                  {isLoading ? "Connecting..." : "Connect"}
                 </button>
               )}
             </div>
           </div>
         </div>
 
+        {/* Top Tracks from Last.fm */}
+        {lastfmUser && (
+          <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 mb-8">
+            <h2 className="text-2xl font-bold text-white mb-6">🎧 Your Top Tracks (Last.fm)</h2>
+            
+            {isLoadingTracks ? (
+              <div className="text-center py-8">
+                <div className="text-white">Loading tracks...</div>
+              </div>
+            ) : topTracks.length > 0 ? (
+              <div className="space-y-3">
+                {topTracks.map((track, index) => (
+                  <div key={index} className="bg-black/30 rounded-lg p-4 flex items-center gap-4">
+                    <div className="text-2xl text-gray-400 w-8 text-center">
+                      {index + 1}
+                    </div>
+                    {track.imageUrl && (
+                      <img 
+                        src={track.imageUrl} 
+                        alt={track.title}
+                        className="w-12 h-12 rounded"
+                      />
+                    )}
+                    <div className="flex-1">
+                      <p className="text-white font-semibold">{track.title}</p>
+                      <p className="text-gray-400 text-sm">{track.artist}</p>
+                    </div>
+                    {track.playCount && (
+                      <div className="text-gray-500 text-sm">
+                        {track.playCount} plays
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-400">No tracks data available yet</p>
+            )}
+          </div>
+        )}
+
         {/* Back Button */}
-        <div className="mt-8 text-center">
+        <div className="text-center">
           <button
             onClick={() => router.push("/")}
             className="bg-white/20 hover:bg-white/30 text-white px-8 py-3 rounded-full transition-all"
