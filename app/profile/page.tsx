@@ -82,7 +82,7 @@ function ProfileContent() {
     setIsLoading(true);
     // ТОЛЬКО продакшен URL
     const redirectUri = encodeURIComponent("https://tootfm.world/api/spotify/callback");
-    const clientId = "d030154634934d92a7dc08ad9770f80f";
+    const clientId = "68a7ea6587af43cc893cc0994a584eff";
     const scopes = encodeURIComponent("user-read-private user-read-email user-modify-playback-state user-read-playback-state");
     
     window.location.href = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scopes}`;
