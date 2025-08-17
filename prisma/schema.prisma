@@ -11,20 +11,28 @@ model User {
   id          String   @id @default(cuid())
   worldId     String   @unique
   displayName String?
+  avatar      String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
-  spotifyId        String?
-  spotifyToken     String?
+  spotifyId           String?
+  spotifyToken        String?
+  spotifyRefreshToken String?
+  spotifyTokenExpiry  DateTime?
+  
   appleMusicId     String?
   appleMusicToken  String?
-  youtubeId        String?
-  youtubeToken     String?
-  preferredService String?
+  
+  youtubeId           String?
+  youtubeToken        String?
+  youtubeRefreshToken String?
+  youtubeTokenExpiry  DateTime?
   
   lastfmUsername   String?
   lastfmKey        String?
   lastfmScrobbling Boolean @default(true)
+  
+  preferredService String?
   
   hostedParties Party[]       @relation("PartyHost")
   participants  Participant[]
@@ -32,6 +40,9 @@ model User {
   votes         Vote[]
   scrobbles     Scrobble[]
   musicProfile  MusicProfile?
+  userTracks    UserTrack[]
+  userArtists   UserArtist[]
+  userGenres    UserGenre[]
 }
 
 model Party {
@@ -115,13 +126,25 @@ model Scrobble {
 
 model MusicProfile {
   id            String   @id @default(cuid())
-  topGenres     String?
-  topArtists    String?
+  
+  musicPersonality  String?
+  energyLevel       Int      @default(50)
+  diversityScore    Int      @default(50)
+  listeningHours    Int      @default(0)
+  
+  topGenres         String?
+  topArtists        String?
+  topTracks         String?
+  audioFeatures     String?
+  genreDistribution String?
+  
   totalScrobbles Int     @default(0)
   weeklyAverage  Int     @default(0)
   favoriteTime   String?
   compatibility  Float?
-  lastUpdated    DateTime @default(now())
+  
+  lastUpdated  DateTime @default(now())
+  lastAnalyzed DateTime?
   
   userId String @unique
   user   User   @relation(fields: [userId], references: [id])
@@ -138,4 +161,60 @@ model Vote {
   track   Track  @relation(fields: [trackId], references: [id])
   
   @@unique([userId, trackId])
+}
+
+model UserTrack {
+  id         String   @id @default(cuid())
+  externalId String
+  service    String
+  title      String
+  artist     String
+  album      String?
+  duration   Int?
+  popularity Int?
+  imageUrl   String?
+  playCount  Int      @default(1)
+  lastPlayed DateTime?
+  isFavorite Boolean  @default(false)
+  addedAt    DateTime @default(now())
+  
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  
+  @@unique([userId, externalId, service])
+  @@index([userId, service])
+}
+
+model UserArtist {
+  id         String   @id @default(cuid())
+  externalId String
+  service    String
+  name       String
+  genres     String?
+  popularity Int?
+  imageUrl   String?
+  playCount  Int      @default(1)
+  rank       Int?
+  addedAt    DateTime @default(now())
+  
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  
+  @@unique([userId, externalId, service])
+  @@index([userId, service])
+}
+
+model UserGenre {
+  id          String   @id @default(cuid())
+  genre       String
+  percentage  Float
+  trackCount  Int      @default(0)
+  artistCount Int      @default(0)
+  lastUpdated DateTime @default(now())
+  
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  
+  @@unique([userId, genre])
+  @@index([userId])
 }
