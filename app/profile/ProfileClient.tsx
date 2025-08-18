@@ -14,6 +14,7 @@ export default function ProfileClient() {
   const [loading, setLoading] = useState(true);
   const [musicProfile, setMusicProfile] = useState<Record<string, any> | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [lastfmData, setLastfmData] = useState<Record<string, any> | null>(null);
   const [connectingServices, setConnectingServices] = useState({
     spotify: false,
@@ -43,7 +44,7 @@ export default function ProfileClient() {
           const spotifyData = JSON.parse(spotifyStored);
           setSpotifyUser(spotifyData);
           // Auto-load music profile if Spotify is connected
-          loadMusicProfile(data);
+          loadMusicProfile();
         } catch (e) {
           console.error("Error parsing Spotify data:", e);
         }
@@ -95,7 +96,7 @@ export default function ProfileClient() {
         
         // Load profile after connecting Spotify
         if (userData) {
-          loadMusicProfile(userData);
+          loadMusicProfile();
         }
       }
     } catch (error) {
@@ -189,66 +190,51 @@ export default function ProfileClient() {
     setConnectingServices(prev => ({ ...prev, lastfm: false }));
   };
 
-  const loadMusicProfile = async (userDataParam?: any) => {
-    const data = userDataParam || userData;
-    if (!data) return;
+  const loadMusicProfile = async () => {
+    if (profileLoading) return;
     
     setProfileLoading(true);
+    setProfileError(null);
     
     try {
-      const userId = data.nullifier_hash || 
-                     data.worldId || 
-                     data.id || 
-                     data.user_id ||
-                     "demo_user";
-
-      console.log("Loading music profile for:", userId);
-
+      // Получаем данные Apple Music из localStorage
+      const appleToken = localStorage.getItem('apple_music_token');
+      const appleLibrary = localStorage.getItem('apple_music_library');
+      
+      // Подготавливаем данные для отправки
+      const requestBody: any = { 
+        userId: userData?.worldId || userData?.nullifier_hash || userData?.id || userData?.user_id || 'anonymous'
+      };
+      
+      // Добавляем Apple Music данные, если есть
+      if (appleToken && appleLibrary) {
+        try {
+          requestBody.appleLibrary = JSON.parse(appleLibrary);
+          console.log('📱 Отправляем Apple Music данные на анализ');
+        } catch (e) {
+          console.error('Ошибка парсинга Apple Music данных:', e);
+        }
+      }
+      
       const response = await fetch('/api/music/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId })
+        body: JSON.stringify(requestBody)
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        console.log("Music profile received:", result);
-        
-        // Normalize profile data
-        const normalizedProfile = {
-          musicPersonality: result.profile?.musicPersonality || "Music Explorer",
-          energyLevel: result.profile?.energyLevel || 70,
-          diversityScore: result.profile?.diversityScore || 80,
-          topGenres: normalizeGenres(result.profile?.topGenres || []),
-          topTracks: result.profile?.topTracks || [],
-          topArtists: result.profile?.topArtists || [],
-          stats: result.profile?.stats || {}
-        };
-        
-        setMusicProfile(normalizedProfile);
-      } else {
-        // Fallback data
-        setMusicProfile({
-          topGenres: ["Pop", "Rock", "Electronic", "Hip-Hop", "Jazz"],
-          musicPersonality: "Eclectic Explorer",
-          energyLevel: 75,
-          diversityScore: 85,
-          topTracks: [],
-          topArtists: [],
-          stats: {}
-        });
+      if (!response.ok) throw new Error('Failed to analyze music');
+      
+      const data = await response.json();
+      
+      if (data.success && data.profile) {
+        setMusicProfile(data.profile);
+        // Кэшируем результат
+        localStorage.setItem('musicProfile', JSON.stringify(data.profile));
+        localStorage.setItem('musicProfileTimestamp', Date.now().toString());
       }
     } catch (error) {
-      console.error("Error loading music profile:", error);
-      setMusicProfile({
-        topGenres: ["Pop", "Rock", "Electronic"],
-        musicPersonality: "Music Lover",
-        energyLevel: 70,
-        diversityScore: 80,
-        topTracks: [],
-        topArtists: [],
-        stats: {}
-      });
+      console.error('Error loading music profile:', error);
+      setProfileError('Не удалось загрузить музыкальный профиль');
     } finally {
       setProfileLoading(false);
     }
