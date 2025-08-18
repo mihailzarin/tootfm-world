@@ -40,6 +40,7 @@ export default function LastFmConnect({ onConnect, onDisconnect }: LastFmConnect
     // Проверяем наличие username в cookies (можно читать на клиенте)
     const cookies = document.cookie.split(';');
     const usernameCookie = cookies.find(c => c.trim().startsWith('lastfm_username='));
+    const userDataCookie = cookies.find(c => c.trim().startsWith('lastfm_user='));
     
     if (usernameCookie) {
       const cookieUsername = decodeURIComponent(usernameCookie.split('=')[1]);
@@ -49,6 +50,22 @@ export default function LastFmConnect({ onConnect, onDisconnect }: LastFmConnect
       
       if (onConnect) {
         onConnect(cookieUsername);
+      }
+    } else if (userDataCookie) {
+      // Пробуем получить из lastfm_user cookie
+      try {
+        const userData = JSON.parse(decodeURIComponent(userDataCookie.split('=')[1]));
+        if (userData.username) {
+          setIsConnected(true);
+          setUsername(userData.username);
+          setError(null);
+          
+          if (onConnect) {
+            onConnect(userData.username);
+          }
+        }
+      } catch (e) {
+        console.error('Error parsing lastfm_user cookie:', e);
       }
     } else {
       setIsConnected(false);
