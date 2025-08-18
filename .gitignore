@@ -38,3 +38,7 @@ yarn-error.log*
 .env
 .env.local
 .env*.local
+keys/
+*.p8
+keys/
+*.p8

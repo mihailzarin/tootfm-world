@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import AppleMusicConnect from "@/components/music-services/AppleMusicConnect";
 
 export default function ProfileClient() {
   const router = useRouter();
@@ -24,7 +23,7 @@ export default function ProfileClient() {
     if (typeof window === 'undefined') return;
     
     try {
-      // Load user data from localStorage
+      // Загружаем данные пользователя из localStorage
       const stored = localStorage.getItem("user_data");
       
       if (!stored) {
@@ -36,32 +35,32 @@ export default function ProfileClient() {
       console.log("User data loaded:", data);
       setUserData(data);
 
-      // Check Spotify
+      // Проверяем Spotify
       const spotifyStored = localStorage.getItem("spotify_user");
       if (spotifyStored) {
         try {
           const spotifyData = JSON.parse(spotifyStored);
           setSpotifyUser(spotifyData);
-          // Auto-load music profile if Spotify is connected
+          // Автоматически загружаем музыкальный профиль если Spotify подключен
           loadMusicProfile(data);
         } catch (e) {
           console.error("Error parsing Spotify data:", e);
         }
       }
 
-      // Check Last.fm from localStorage
+      // Проверяем Last.fm из localStorage
       const lastfmStored = localStorage.getItem("lastfm_user");
       if (lastfmStored) {
         setLastfmUser(lastfmStored);
         loadLastfmData();
       }
 
-      // Handle Spotify callback
+      // Обработка Spotify callback
       if (searchParams?.get("spotify") === "connected") {
         handleSpotifyCallback();
       }
 
-      // Handle Last.fm callback
+      // Обработка Last.fm callback
       const lastfmStatus = searchParams?.get("lastfm");
       const lastfmUsername = searchParams?.get("username");
       
@@ -93,7 +92,7 @@ export default function ProfileClient() {
         localStorage.setItem("spotify_connected", "true");
         setConnectingServices(prev => ({ ...prev, spotify: false }));
         
-        // Load profile after connecting Spotify
+        // Загружаем профиль после подключения Spotify
         if (userData) {
           loadMusicProfile(userData);
         }
@@ -108,7 +107,7 @@ export default function ProfileClient() {
     try {
       console.log("Handling Last.fm callback...");
       
-      // First check URL parameters
+      // Сначала проверяем URL параметры
       const username = searchParams?.get("username");
       
       if (username) {
@@ -118,15 +117,15 @@ export default function ProfileClient() {
         localStorage.setItem("lastfm_connected", "true");
         setConnectingServices(prev => ({ ...prev, lastfm: false }));
         
-        // Load Last.fm data
+        // Загружаем данные Last.fm
         loadLastfmData();
         
-        // Show success notification
+        // Показываем уведомление об успехе
         console.log("Last.fm connected successfully:", username);
         return;
       }
       
-      // If no username in URL, check cookies
+      // Если нет username в URL, проверяем куки
       const cookies = document.cookie.split(';');
       const lastfmUserCookie = cookies.find(c => c.trim().startsWith('lastfm_user='));
       
@@ -141,7 +140,7 @@ export default function ProfileClient() {
             localStorage.setItem("lastfm_user", cookieData.username);
             localStorage.setItem("lastfm_connected", "true");
             
-            // Save additional data if available
+            // Сохраняем дополнительные данные если есть
             if (cookieData.profile) {
               localStorage.setItem("lastfm_profile", JSON.stringify(cookieData.profile));
             }
@@ -175,6 +174,7 @@ export default function ProfileClient() {
 
   const connectLastfm = () => {
     setConnectingServices(prev => ({ ...prev, lastfm: true }));
+    // Используем существующий роут connect вместо auth
     window.location.href = '/api/music/lastfm/connect';
   };
 
@@ -214,7 +214,7 @@ export default function ProfileClient() {
         const result = await response.json();
         console.log("Music profile received:", result);
         
-        // Normalize profile data
+        // Нормализуем данные профиля
         const normalizedProfile = {
           musicPersonality: result.profile?.musicPersonality || "Music Explorer",
           energyLevel: result.profile?.energyLevel || 70,
@@ -227,7 +227,7 @@ export default function ProfileClient() {
         
         setMusicProfile(normalizedProfile);
       } else {
-        // Fallback data
+        // Fallback данные
         setMusicProfile({
           topGenres: ["Pop", "Rock", "Electronic", "Hip-Hop", "Jazz"],
           musicPersonality: "Eclectic Explorer",
@@ -258,6 +258,7 @@ export default function ProfileClient() {
     try {
       console.log("Loading Last.fm data...");
       
+      // Сначала пробуем получить топ треки
       const response = await fetch('/api/music/lastfm/top-tracks');
       
       if (response.ok) {
@@ -265,7 +266,9 @@ export default function ProfileClient() {
         console.log("Last.fm tracks received:", data);
         setLastfmData(data);
         
+        // Если есть треки, обновляем музыкальный профиль
         if (data.tracks && data.tracks.length > 0) {
+          // Можно объединить с существующим профилем
           updateProfileWithLastfmData(data);
         }
       } else {
@@ -279,12 +282,15 @@ export default function ProfileClient() {
   const updateProfileWithLastfmData = (lastfmData: any) => {
     if (!musicProfile) return;
     
+    // Объединяем данные из Last.fm с существующим профилем
     setMusicProfile(prev => ({
       ...prev,
       lastfmTracks: lastfmData.tracks,
+      // Можно добавить больше данных по мере необходимости
     }));
   };
 
+  // Функция для нормализации жанров
   const normalizeGenres = (genres: any[]): string[] => {
     if (!Array.isArray(genres)) return [];
     
@@ -484,8 +490,26 @@ export default function ProfileClient() {
                 </div>
               </div>
 
-              {/* Apple Music - NOW WORKING! */}
-              <AppleMusicConnect />
+              {/* Apple Music */}
+              <div className="bg-gradient-to-r from-pink-900/30 to-pink-700/30 rounded-xl p-4 border border-pink-500/20 opacity-60">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-pink-500 rounded-full flex items-center justify-center text-2xl">
+                      🎵
+                    </div>
+                    <div>
+                      <h3 className="text-white font-bold">Apple Music</h3>
+                      <p className="text-gray-400 text-sm">Coming soon</p>
+                    </div>
+                  </div>
+                  <button 
+                    disabled 
+                    className="bg-gray-600 text-gray-400 px-4 py-2 rounded-full cursor-not-allowed"
+                  >
+                    Connect
+                  </button>
+                </div>
+              </div>
 
               {/* YouTube Music */}
               <div className="bg-gradient-to-r from-orange-900/30 to-orange-700/30 rounded-xl p-4 border border-orange-500/20 opacity-60">
@@ -560,10 +584,10 @@ export default function ProfileClient() {
                     </div>
                   </div>
 
-                  {/* Top Tracks */}
+                  {/* Spotify Top Tracks */}
                   {musicProfile.topTracks && musicProfile.topTracks.length > 0 && (
                     <div className="bg-black/30 rounded-xl p-4">
-                      <p className="text-gray-400 text-sm mb-3">Recent Favorites</p>
+                      <p className="text-gray-400 text-sm mb-3">Recent Favorites (Spotify)</p>
                       <div className="space-y-2">
                         {musicProfile.topTracks.slice(0, 3).map((track: any, i: number) => (
                           <div key={`track-${i}`} className="flex items-center gap-3">
@@ -575,6 +599,46 @@ export default function ProfileClient() {
                               <p className="text-gray-400 text-xs truncate">{track.artist}</p>
                             </div>
                           </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Last.fm Recent Tracks */}
+                  {lastfmData?.tracks && lastfmData.tracks.length > 0 && (
+                    <div className="bg-black/30 rounded-xl p-4">
+                      <p className="text-gray-400 text-sm mb-3">Recent Plays (Last.fm)</p>
+                      <div className="space-y-2">
+                        {lastfmData.tracks.slice(0, 3).map((track: any, i: number) => (
+                          <div key={`lastfm-track-${i}`} className="flex items-center gap-3">
+                            {track.imageUrl && (
+                              <img src={track.imageUrl} alt={track.title} className="w-10 h-10 rounded" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white text-sm font-medium truncate">{track.title}</p>
+                              <p className="text-gray-400 text-xs truncate">{track.artist}</p>
+                              {track.playCount > 1 && (
+                                <p className="text-gray-500 text-xs">{track.playCount} plays</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Top Artists */}
+                  {musicProfile.topArtists && musicProfile.topArtists.length > 0 && (
+                    <div className="bg-black/30 rounded-xl p-4">
+                      <p className="text-gray-400 text-sm mb-3">Top Artists</p>
+                      <div className="flex flex-wrap gap-2">
+                        {musicProfile.topArtists.slice(0, 5).map((artist: any, i: number) => (
+                          <span 
+                            key={`artist-${i}`}
+                            className="bg-green-600/20 text-green-300 px-3 py-1 rounded-full text-sm border border-green-500/30"
+                          >
+                            {artist.name}
+                          </span>
                         ))}
                       </div>
                     </div>
@@ -655,6 +719,27 @@ export default function ProfileClient() {
                   </div>
                 </div>
               </div>
+
+              {/* Last.fm specific stats */}
+              {lastfmData && (
+                <div className="bg-black/30 rounded-xl p-4 mb-6">
+                  <p className="text-gray-400 text-sm mb-2">Last.fm Activity</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xl font-bold text-white">
+                        {lastfmData.tracks?.length || 0}
+                      </p>
+                      <p className="text-gray-500 text-xs">Recent tracks</p>
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold text-white">
+                        {lastfmUser || 'N/A'}
+                      </p>
+                      <p className="text-gray-500 text-xs">Username</p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Party Stats */}
               <div className="grid grid-cols-3 gap-4">
