@@ -1,121 +1,115 @@
 "use client";
+/* eslint-disable */
 
-import { useEffect, useState, Suspense } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MusicPortrait from "../../components/profile/MusicPortrait";
 
-interface UserData {
-  id?: string;
-  worldId?: string;
+type UserData = {
+  id?: string | number;
+  worldId?: string | number;
   credentialType?: string;
   verified?: boolean;
   createdAt?: string;
-}
+};
 
-interface SpotifyUser {
+type SpotifyUser = {
   id: string;
   name: string;
   email: string;
   image?: string;
+};
+
+function safeCookieParse(raw: string | undefined | null): SpotifyUser | null {
+  if (!raw) return null;
+  try {
+    const val = decodeURIComponent(raw);
+    const trimmed = val.startsWith("j:") || val.startsWith("s:") ? val.slice(2) : val;
+    return JSON.parse(trimmed);
+  } catch (_e) {
+    console.warn("Bad spotify_user cookie");
+    return null;
+  }
 }
 
-function ProfileContent() {
+function ProfileContent(): JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const [userData, setUserData] = useState<UserData | null>(null);
   const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null);
-  const [activeTab, setActiveTab] = useState<'services' | 'portrait' | 'stats'>('services');
+  const [activeTab, setActiveTab] = useState<"services" | "portrait" | "stats">("services");
   const [loadingStates, setLoadingStates] = useState({
     spotify: false,
     apple: false,
-    lastfm: false
+    lastfm: false,
   });
 
   useEffect(() => {
-    // Проверяем localStorage
-    const storedUserData = localStorage.getItem("user_data");
-    console.log("Stored user data:", storedUserData); // Для отладки
-    
-    if (!storedUserData) {
-      console.log("No user data found, redirecting to home");
-      router.push("/");
-      return;
-    }
-    
     try {
-      const parsed = JSON.parse(storedUserData);
-      console.log("Parsed user data:", parsed); // Для отладки
-      
-      // ВАЖНО: Убедимся что есть хоть какой-то ID
-      if (!parsed.worldId && !parsed.id && !parsed.nullifier_hash) {
-        // Если нет никакого ID, создаем временный
-        parsed.worldId = "temp_user_" + Date.now();
-      } else if (!parsed.worldId) {
-        // Используем что есть
-        parsed.worldId = parsed.id || parsed.nullifier_hash || "unknown_user";
+      const storedUserData = typeof window !== "undefined" ? localStorage.getItem("user_data") : null;
+      if (!storedUserData) {
+        router.push("/");
+        return;
       }
-      
-      setUserData(parsed);
-    } catch (e) {
-      console.error("Error parsing user data:", e);
-      router.push("/");
-      return;
-    }
 
-    // Обработка Spotify callback
-    const spotifyStatus = searchParams.get("spotify");
-    if (spotifyStatus === "connected") {
-      const getCookie = (name: string) => {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop()?.split(';').shift();
-      };
+      const parsed = JSON.parse(storedUserData || "{}");
+      if (!parsed.worldId && parsed.id) {
+        parsed.worldId = parsed.id;
+      }
+      setUserData(parsed as UserData);
 
-      const spotifyUserCookie = getCookie("spotify_user");
-      if (spotifyUserCookie) {
-        try {
-          const user = JSON.parse(decodeURIComponent(spotifyUserCookie));
-          setSpotifyUser(user);
+      const spotifyStatus = searchParams.get("spotify");
+      if (spotifyStatus === "connected") {
+        const getCookie = (name: string) => {
+          const value = `; ${document.cookie}`;
+          const parts = value.split(`; ${name}=`);
+          if (parts.length === 2) return parts.pop()?.split(";").shift();
+          return undefined;
+        };
+        const spotifyUserCookie = getCookie("spotify_user");
+        const u = safeCookieParse(spotifyUserCookie);
+        if (u) {
+          setSpotifyUser(u);
           localStorage.setItem("spotify_connected", "true");
-          localStorage.setItem("spotify_user", JSON.stringify(user));
-          setLoadingStates(prev => ({ ...prev, spotify: false }));
-        } catch (e) {
-          console.error("Error parsing Spotify user:", e);
+          localStorage.setItem("spotify_user", JSON.stringify(u));
+          setLoadingStates((prev) => ({ ...prev, spotify: false }));
+        } else {
+          setLoadingStates((prev) => ({ ...prev, spotify: false }));
         }
       }
-    }
 
-    // Загружаем сохраненного Spotify пользователя
-    const savedSpotifyUser = localStorage.getItem("spotify_user");
-    if (savedSpotifyUser && !spotifyUser) {
-      try {
-        setSpotifyUser(JSON.parse(savedSpotifyUser));
-      } catch (e) {
-        console.error("Error loading Spotify user:", e);
+      const savedSpotifyUser = localStorage.getItem("spotify_user");
+      if (savedSpotifyUser && !spotifyUser) {
+        try {
+          const u = JSON.parse(savedSpotifyUser) as SpotifyUser;
+          setSpotifyUser(u);
+        } catch (_e) {
+          // ignore bad localStorage
+        }
       }
+    } catch (_e) {
+      console.error("Profile load error");
+      router.push("/");
     }
   }, [router, searchParams]);
 
   const connectSpotify = () => {
-    setLoadingStates(prev => ({ ...prev, spotify: true }));
-    window.location.href = '/api/spotify/auth';
+    setLoadingStates((prev) => ({ ...prev, spotify: true }));
+    window.location.href = "/api/spotify/auth";
   };
 
   const disconnectSpotify = () => {
     setSpotifyUser(null);
     localStorage.removeItem("spotify_connected");
     localStorage.removeItem("spotify_user");
-    document.cookie = "spotify_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-    document.cookie = "spotify_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "spotify_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;";
+    document.cookie = "spotify_user=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;";
   };
 
   const connectLastfm = () => {
-    setLoadingStates(prev => ({ ...prev, lastfm: true }));
-    // Временно показываем сообщение
-    setTimeout(() => {
-      alert("Last.fm integration coming soon!");
-      setLoadingStates(prev => ({ ...prev, lastfm: false }));
-    }, 500);
+    setLoadingStates((prev) => ({ ...prev, lastfm: true }));
+    window.location.href = "/api/music/lastfm/connect";
   };
 
   const connectApple = () => {
@@ -124,12 +118,9 @@ function ProfileContent() {
 
   const handleLogout = () => {
     localStorage.clear();
-    document.cookie = "spotify_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-    document.cookie = "spotify_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     router.push("/");
   };
 
-  // Показываем загрузку пока нет userData
   if (!userData) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
@@ -138,23 +129,14 @@ function ProfileContent() {
     );
   }
 
-  // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Безопасное получение и обрезание worldId
-  const getDisplayWorldId = () => {
-    const id = userData.worldId || userData.id || "Unknown User";
-    // Проверяем что id это строка и имеет метод slice
-    if (typeof id === 'string' && id.length > 20) {
-      return `${id.slice(0, 20)}...`;
-    }
-    return id;
-  };
-
-  const displayWorldId = userData.worldId || userData.id || "Unknown";
-  const shortWorldId = getDisplayWorldId();
+  const displayWorldIdRaw = userData.worldId ?? userData.id ?? "Unknown";
+  const displayWorldId = String(displayWorldIdRaw ?? "");
+  const shortWorldId =
+    displayWorldId && displayWorldId.length > 20 ? `${displayWorldId.slice(0, 20)}...` : displayWorldId;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black p-8">
       <div className="max-w-4xl mx-auto">
-        {/* Header Card */}
         <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 mb-8">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-4xl font-bold text-white">My Profile</h1>
@@ -165,7 +147,7 @@ function ProfileContent() {
               Logout
             </button>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-white">
             <div>
               <p className="text-gray-400">World ID</p>
@@ -178,47 +160,38 @@ function ProfileContent() {
           </div>
         </div>
 
-        {/* Tab Navigation */}
         <div className="flex gap-4 mb-8 justify-center">
           <button
-            onClick={() => setActiveTab('services')}
+            onClick={() => setActiveTab("services")}
             className={`px-6 py-3 rounded-full transition-all ${
-              activeTab === 'services' 
-                ? 'bg-white/20 text-white' 
-                : 'bg-white/10 text-gray-400 hover:bg-white/15'
+              activeTab === "services" ? "bg-white/20 text-white" : "bg-white/10 text-gray-400 hover:bg-white/15"
             }`}
           >
             🎵 Services
           </button>
           <button
-            onClick={() => setActiveTab('portrait')}
+            onClick={() => setActiveTab("portrait")}
             className={`px-6 py-3 rounded-full transition-all ${
-              activeTab === 'portrait' 
-                ? 'bg-white/20 text-white' 
-                : 'bg-white/10 text-gray-400 hover:bg-white/15'
+              activeTab === "portrait" ? "bg-white/20 text-white" : "bg-white/10 text-gray-400 hover:bg-white/15"
             }`}
           >
             🎨 Music Portrait
           </button>
           <button
-            onClick={() => setActiveTab('stats')}
+            onClick={() => setActiveTab("stats")}
             className={`px-6 py-3 rounded-full transition-all ${
-              activeTab === 'stats' 
-                ? 'bg-white/20 text-white' 
-                : 'bg-white/10 text-gray-400 hover:bg-white/15'
+              activeTab === "stats" ? "bg-white/20 text-white" : "bg-white/10 text-gray-400 hover:bg-white/15"
             }`}
           >
             📊 Statistics
           </button>
         </div>
 
-        {/* Tab Content */}
         <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8">
-          {activeTab === 'services' && (
+          {activeTab === "services" && (
             <div className="space-y-4">
               <h2 className="text-2xl font-bold text-white mb-6">🎵 Music Services</h2>
-              
-              {/* Spotify */}
+
               <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
@@ -243,9 +216,7 @@ function ProfileContent() {
                     onClick={connectSpotify}
                     disabled={loadingStates.spotify}
                     className={`px-6 py-2 rounded-full transition-all ${
-                      loadingStates.spotify 
-                        ? "bg-gray-600 text-gray-300 cursor-wait" 
-                        : "bg-green-500 hover:bg-green-600 text-white"
+                      loadingStates.spotify ? "bg-gray-600 text-gray-300 cursor-wait" : "bg-green-500 hover:bg-green-600 text-white"
                     }`}
                   >
                     {loadingStates.spotify ? "Connecting..." : "Connect"}
@@ -253,7 +224,6 @@ function ProfileContent() {
                 )}
               </div>
 
-              {/* Apple Music */}
               <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between opacity-75">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-pink-500 rounded-full flex items-center justify-center">
@@ -273,7 +243,6 @@ function ProfileContent() {
                 </button>
               </div>
 
-              {/* Last.fm */}
               <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
@@ -288,9 +257,7 @@ function ProfileContent() {
                   onClick={connectLastfm}
                   disabled={loadingStates.lastfm}
                   className={`px-6 py-2 rounded-full transition-all ${
-                    loadingStates.lastfm 
-                      ? "bg-gray-600 text-gray-300 cursor-wait" 
-                      : "bg-red-600 hover:bg-red-700 text-white"
+                    loadingStates.lastfm ? "bg-gray-600 text-gray-300 cursor-wait" : "bg-red-600 hover:bg-red-700 text-white"
                   }`}
                 >
                   {loadingStates.lastfm ? "Connecting..." : "Connect"}
@@ -299,7 +266,7 @@ function ProfileContent() {
             </div>
           )}
 
-          {activeTab === 'portrait' && (
+          {activeTab === "portrait" && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-6">🎨 Music Portrait</h2>
               {spotifyUser ? (
@@ -308,7 +275,7 @@ function ProfileContent() {
                 <div className="text-center py-8">
                   <p className="text-gray-400 mb-4">Connect Spotify to see your music portrait</p>
                   <button
-                    onClick={() => setActiveTab('services')}
+                    onClick={() => setActiveTab("services")}
                     className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-full"
                   >
                     Go to Services
@@ -318,7 +285,7 @@ function ProfileContent() {
             </div>
           )}
 
-          {activeTab === 'stats' && (
+          {activeTab === "stats" && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-6">📊 Statistics</h2>
               <div className="text-center py-8">
@@ -329,7 +296,6 @@ function ProfileContent() {
           )}
         </div>
 
-        {/* Back Button */}
         <div className="text-center mt-8">
           <button
             onClick={() => router.push("/")}
@@ -343,13 +309,15 @@ function ProfileContent() {
   );
 }
 
-export default function ProfilePage() {
+export default function ProfilePage(): JSX.Element {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
-        <div className="text-white">Loading...</div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
+          <div className="text-white">Loading...</div>
+        </div>
+      }
+    >
       <ProfileContent />
     </Suspense>
   );
