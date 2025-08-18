@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function ProfilePage() {
+// Внутренний компонент который использует useSearchParams
+function ProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [userData, setUserData] = useState<any>(null);
@@ -43,7 +44,7 @@ export default function ProfilePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchParams, router]);
 
   const handleSpotifyCallback = () => {
     try {
@@ -357,5 +358,18 @@ export default function ProfilePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Главный компонент с Suspense
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
+        <div className="text-white text-xl">Loading profile...</div>
+      </div>
+    }>
+      <ProfileContent />
+    </Suspense>
   );
 }
