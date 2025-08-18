@@ -16,9 +16,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // ПРАВИЛЬНЫЕ CREDENTIALS
-    const CLIENT_ID = '68a7ea6587af43cc893cc0994a584eff';
-    const CLIENT_SECRET = 'cd2b848b64e743c784600947a13459f2';
+    // Используем переменные окружения
+    const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID!;
+    const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET!;
     const REDIRECT_URI = 'https://tootfm.world/api/spotify/callback';
     
     const tokenResponse = await fetch("https://accounts.spotify.com/api/token", {
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     // Получаем профиль пользователя
     const profileResponse = await fetch("https://api.spotify.com/v1/me", {
       headers: {
-        "Authorization": `Bearer ${tokenData.access_token}` // ИСПРАВЛЕНО: добавлены обратные кавычки
+        "Authorization": `Bearer ${tokenData.access_token}`
       },
     });
 
