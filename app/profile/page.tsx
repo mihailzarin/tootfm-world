@@ -3,10 +3,11 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MusicPortrait from "../../components/profile/MusicPortrait";
+import ErrorBoundary from "../../components/common/ErrorBoundary";
 
 interface UserData {
-  id?: string;
-  worldId?: string;
+  id?: string | number;
+  worldId?: string | number;
   credentialType?: string;
   verified?: boolean;
   createdAt?: string;
@@ -17,6 +18,19 @@ interface SpotifyUser {
   name: string;
   email: string;
   image?: string;
+}
+
+function safeCookieParse(raw: string | undefined | null) {
+  if (!raw) return null;
+  try {
+    // cookie может иметь префикс 'j:' или 's:' (как у express-cookie)
+    const val = decodeURIComponent(raw);
+    const trimmed = (val.startsWith("j:") || val.startsWith("s:")) ? val.slice(2) : val;
+    return JSON.parse(trimmed);
+  } catch (e) {
+    console.warn("Bad spotify_user cookie:", e);
+    return null;
+  }
 }
 
 function ProfileContent() {
@@ -32,7 +46,7 @@ function ProfileContent() {
   });
 
   useEffect(() => {
-    const storedUserData = localStorage.getItem("user_data");
+    const storedUserData = typeof window !== 'undefined' ? localStorage.getItem("user_data") : null;
     if (!storedUserData) {
       router.push("/");
       return;
@@ -40,10 +54,8 @@ function ProfileContent() {
     
     try {
       const parsed = JSON.parse(storedUserData);
-      // Убедимся что есть worldId
-      if (!parsed.worldId && parsed.id) {
-        parsed.worldId = parsed.id;
-      }
+      // подправим worldId, если он был спрятан в id
+      if (!parsed.worldId && parsed.id) parsed.worldId = parsed.id;
       setUserData(parsed);
     } catch (e) {
       console.error("Error parsing user data:", e);
@@ -57,19 +69,19 @@ function ProfileContent() {
         const value = `; ${document.cookie}`;
         const parts = value.split(`; ${name}=`);
         if (parts.length === 2) return parts.pop()?.split(';').shift();
+        return undefined;
       };
 
       const spotifyUserCookie = getCookie("spotify_user");
-      if (spotifyUserCookie) {
-        try {
-          const user = JSON.parse(decodeURIComponent(spotifyUserCookie));
-          setSpotifyUser(user);
-          localStorage.setItem("spotify_connected", "true");
-          localStorage.setItem("spotify_user", JSON.stringify(user));
-          setLoadingStates(prev => ({ ...prev, spotify: false }));
-        } catch (e) {
-          console.error("Error parsing Spotify user:", e);
-        }
+      const user = safeCookieParse(spotifyUserCookie);
+      if (user) {
+        setSpotifyUser(user);
+        localStorage.setItem("spotify_connected", "true");
+        localStorage.setItem("spotify_user", JSON.stringify(user));
+        setLoadingStates(prev => ({ ...prev, spotify: false }));
+      } else {
+        // не валидная/пустая cookie — просто снимем лоадер
+        setLoadingStates(prev => ({ ...prev, spotify: false }));
       }
     }
 
@@ -118,9 +130,12 @@ function ProfileContent() {
     );
   }
 
-  // Безопасное отображение worldId
-  const displayWorldId = userData.worldId || userData.id || "Unknown";
-  const shortWorldId = displayWorldId.length > 20 ? `${displayWorldId.slice(0, 20)}...` : displayWorldId;
+  // ✅ Жестко приводим к строке
+  const displayWorldIdRaw = userData.worldId ?? userData.id ?? "Unknown";
+  const displayWorldId = String(displayWorldIdRaw ?? "");
+  const shortWorldId = displayWorldId && displayWorldId.length > 20
+    ? `${displayWorldId.slice(0, 20)}...`
+    : displayWorldId;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black p-8">
@@ -139,7 +154,7 @@ function ProfileContent() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-white">
             <div>
               <p className="text-gray-400">World ID</p>
-              <p className="font-mono text-sm">{shortWorldId}</p>
+              <p className="font-mono text-sm break-all">{shortWorldId}</p>
             </div>
             <div>
               <p className="text-gray-400">Verification Type</p>
@@ -309,12 +324,14 @@ function ProfileContent() {
 
 export default function ProfilePage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
-        <div className="text-white">Loading...</div>
-      </div>
-    }>
-      <ProfileContent />
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={
+        <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
+          <div className="text-white">Loading...</div>
+        </div>
+      }>
+        <ProfileContent />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
