@@ -6,10 +6,10 @@ import MusicPortrait from "../../components/profile/MusicPortrait";
 
 interface UserData {
   id?: string;
-  worldId: string;
-  credentialType: string;
-  verified: boolean;
-  createdAt: string;
+  worldId?: string;
+  credentialType?: string;
+  verified?: boolean;
+  createdAt?: string;
 }
 
 interface SpotifyUser {
@@ -37,9 +37,20 @@ function ProfileContent() {
       router.push("/");
       return;
     }
-    setUserData(JSON.parse(storedUserData));
+    
+    try {
+      const parsed = JSON.parse(storedUserData);
+      // Убедимся что есть worldId
+      if (!parsed.worldId && parsed.id) {
+        parsed.worldId = parsed.id;
+      }
+      setUserData(parsed);
+    } catch (e) {
+      console.error("Error parsing user data:", e);
+      router.push("/");
+      return;
+    }
 
-    // Проверяем статус Spotify из URL params
     const spotifyStatus = searchParams.get("spotify");
     if (spotifyStatus === "connected") {
       const getCookie = (name: string) => {
@@ -62,7 +73,6 @@ function ProfileContent() {
       }
     }
 
-    // Загружаем сохранённые данные Spotify
     const savedSpotifyUser = localStorage.getItem("spotify_user");
     if (savedSpotifyUser && !spotifyUser) {
       try {
@@ -108,10 +118,13 @@ function ProfileContent() {
     );
   }
 
+  // Безопасное отображение worldId
+  const displayWorldId = userData.worldId || userData.id || "Unknown";
+  const shortWorldId = displayWorldId.length > 20 ? `${displayWorldId.slice(0, 20)}...` : displayWorldId;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black p-8">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
         <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 mb-8">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-4xl font-bold text-white">My Profile</h1>
@@ -126,7 +139,7 @@ function ProfileContent() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-white">
             <div>
               <p className="text-gray-400">World ID</p>
-              <p className="font-mono text-sm">{userData.worldId.slice(0, 20)}...</p>
+              <p className="font-mono text-sm">{shortWorldId}</p>
             </div>
             <div>
               <p className="text-gray-400">Verification Type</p>
@@ -135,7 +148,6 @@ function ProfileContent() {
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-4 mb-8 justify-center">
           <button
             onClick={() => setActiveTab('services')}
@@ -169,13 +181,11 @@ function ProfileContent() {
           </button>
         </div>
 
-        {/* Content */}
         <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8">
           {activeTab === 'services' && (
             <div className="space-y-4">
               <h2 className="text-2xl font-bold text-white mb-6">🎵 Music Services</h2>
               
-              {/* Spotify */}
               <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
@@ -210,7 +220,6 @@ function ProfileContent() {
                 )}
               </div>
 
-              {/* Apple Music */}
               <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between opacity-75">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-pink-500 rounded-full flex items-center justify-center">
@@ -230,7 +239,6 @@ function ProfileContent() {
                 </button>
               </div>
 
-              {/* Last.fm */}
               <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
@@ -260,7 +268,7 @@ function ProfileContent() {
             <div>
               <h2 className="text-2xl font-bold text-white mb-6">🎨 Music Portrait</h2>
               {spotifyUser ? (
-                <MusicPortrait userId={userData.worldId} />
+                <MusicPortrait userId={displayWorldId} />
               ) : (
                 <div className="text-center py-8">
                   <p className="text-gray-400 mb-4">Connect Spotify to see your music portrait</p>
@@ -286,7 +294,6 @@ function ProfileContent() {
           )}
         </div>
 
-        {/* Back Button */}
         <div className="text-center mt-8">
           <button
             onClick={() => router.push("/")}
