@@ -2,8 +2,10 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import MusicPortrait from "@/components/profile/MusicPortrait";
 
 interface UserData {
+  id?: string;
   worldId: string;
   credentialType: string;
   verified: boolean;
@@ -17,31 +19,17 @@ interface SpotifyUser {
   image?: string;
 }
 
-interface LastFmUser {
-  username: string;
-  profile?: {
-    displayName?: string;
-    country?: string;
-    followers?: number;
-  };
-}
-
-interface Track {
-  title: string;
-  artist: string;
-  playCount?: number;
-  imageUrl?: string;
-}
-
 function ProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null);
-  const [lastfmUser, setLastfmUser] = useState<LastFmUser | null>(null);
-  const [topTracks, setTopTracks] = useState<Track[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingTracks, setIsLoadingTracks] = useState(false);
+  const [activeTab, setActiveTab] = useState<'services' | 'portrait' | 'stats'>('services');
+  const [loadingStates, setLoadingStates] = useState({
+    spotify: false,
+    apple: false,
+    lastfm: false
+  });
 
   useEffect(() => {
     const storedUserData = localStorage.getItem("user_data");
@@ -51,7 +39,7 @@ function ProfileContent() {
     }
     setUserData(JSON.parse(storedUserData));
 
-    // Проверяем Spotify
+    // Проверяем статус Spotify из URL params
     const spotifyStatus = searchParams.get("spotify");
     if (spotifyStatus === "connected") {
       const getCookie = (name: string) => {
@@ -67,91 +55,27 @@ function ProfileContent() {
           setSpotifyUser(user);
           localStorage.setItem("spotify_connected", "true");
           localStorage.setItem("spotify_user", JSON.stringify(user));
+          setLoadingStates(prev => ({ ...prev, spotify: false }));
         } catch (e) {
           console.error("Error parsing Spotify user:", e);
         }
       }
     }
 
-    // Проверяем Last.fm из параметров URL
-    const lastfmStatus = searchParams.get("lastfm");
-    const lastfmUsername = searchParams.get("username");
-    
-    if (lastfmStatus === "connected" && lastfmUsername) {
-      // Читаем cookie с данными Last.fm
-      const getCookie = (name: string) => {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop()?.split(';').shift();
-      };
-
-      const lastfmCookie = getCookie("lastfm_user");
-      if (lastfmCookie) {
-        try {
-          const user = JSON.parse(decodeURIComponent(lastfmCookie));
-          setLastfmUser(user);
-          localStorage.setItem("lastfm_data", JSON.stringify(user));
-          // Загружаем топ треки
-          fetchTopTracks();
-        } catch (e) {
-          console.error("Error parsing Last.fm cookie:", e);
-        }
-      }
-    }
-
-    // Загружаем сохранённые данные
-    if (localStorage.getItem("spotify_connected")) {
-      const savedSpotifyUser = localStorage.getItem("spotify_user");
-      if (savedSpotifyUser) {
-        try {
-          setSpotifyUser(JSON.parse(savedSpotifyUser));
-        } catch (e) {
-          console.error("Error loading Spotify user:", e);
-        }
-      }
-    }
-
-    // Загружаем Last.fm из localStorage
-    const savedLastfm = localStorage.getItem("lastfm_data");
-    if (savedLastfm && !lastfmUser) {
+    // Загружаем сохранённые данные Spotify
+    const savedSpotifyUser = localStorage.getItem("spotify_user");
+    if (savedSpotifyUser && !spotifyUser) {
       try {
-        const user = JSON.parse(savedLastfm);
-        setLastfmUser(user);
-        // Загружаем топ треки
-        fetchTopTracks();
+        setSpotifyUser(JSON.parse(savedSpotifyUser));
       } catch (e) {
-        console.error("Error loading Last.fm data:", e);
+        console.error("Error loading Spotify user:", e);
       }
-    }
-
-    const error = searchParams.get("error");
-    if (error) {
-      alert(`Ошибка подключения: ${error}`);
     }
   }, [router, searchParams]);
 
-  const fetchTopTracks = async () => {
-    setIsLoadingTracks(true);
-    try {
-      const response = await fetch('/api/music/lastfm/top-tracks');
-      if (response.ok) {
-        const data = await response.json();
-        setTopTracks(data.tracks || []);
-      }
-    } catch (error) {
-      console.error('Error fetching top tracks:', error);
-    } finally {
-      setIsLoadingTracks(false);
-    }
-  };
-
   const connectSpotify = () => {
-    setIsLoading(true);
-    const redirectUri = encodeURIComponent("https://tootfm.world/api/spotify/callback");
-    const clientId = "68a7ea6587af43cc893cc0994a584eff";
-    const scopes = encodeURIComponent("user-read-private user-read-email user-modify-playback-state user-read-playback-state");
-    
-    window.location.href = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scopes}`;
+    setLoadingStates(prev => ({ ...prev, spotify: true }));
+    window.location.href = '/api/spotify/auth';
   };
 
   const disconnectSpotify = () => {
@@ -162,21 +86,13 @@ function ProfileContent() {
     document.cookie = "spotify_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   };
 
-  const connectAppleMusic = () => {
-    alert("Apple Music интеграция будет добавлена в следующей версии!");
-  };
-
   const connectLastfm = () => {
-    setIsLoading(true);
-    // Используем настоящую OAuth авторизацию
+    setLoadingStates(prev => ({ ...prev, lastfm: true }));
     window.location.href = '/api/music/lastfm/connect';
   };
 
-  const disconnectLastfm = () => {
-    setLastfmUser(null);
-    setTopTracks([]);
-    localStorage.removeItem("lastfm_data");
-    document.cookie = "lastfm_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+  const connectApple = () => {
+    alert("Apple Music integration coming soon!");
   };
 
   const handleLogout = () => {
@@ -219,142 +135,159 @@ function ProfileContent() {
           </div>
         </div>
 
-        {/* Music Services */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 mb-8">
-          <h2 className="text-2xl font-bold text-white mb-6">🎵 Music Services</h2>
-          
-          <div className="space-y-4">
-            {/* Spotify */}
-            <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
-                  <span className="text-2xl">🎵</span>
-                </div>
-                <div>
-                  <h3 className="text-white font-bold">Spotify</h3>
-                  <p className="text-gray-400 text-sm">
-                    {spotifyUser ? `Connected: ${spotifyUser.name || spotifyUser.email}` : "Stream and control music"}
-                  </p>
-                </div>
-              </div>
-              {spotifyUser ? (
-                <button
-                  onClick={disconnectSpotify}
-                  className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-4 py-2 rounded-full transition-all"
-                >
-                  Disconnect
-                </button>
-              ) : (
-                <button
-                  onClick={connectSpotify}
-                  disabled={isLoading}
-                  className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-full transition-all"
-                >
-                  {isLoading ? "Connecting..." : "Connect"}
-                </button>
-              )}
-            </div>
-
-            {/* Apple Music */}
-            <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-pink-500 rounded-full flex items-center justify-center">
-                  <span className="text-2xl">🎵</span>
-                </div>
-                <div>
-                  <h3 className="text-white font-bold">Apple Music</h3>
-                  <p className="text-gray-400 text-sm">Coming soon</p>
-                </div>
-              </div>
-              <button
-                onClick={connectAppleMusic}
-                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-full transition-all"
-              >
-                Connect
-              </button>
-            </div>
-
-            {/* Last.fm */}
-            <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
-                  <span className="text-2xl">📊</span>
-                </div>
-                <div>
-                  <h3 className="text-white font-bold">Last.fm</h3>
-                  <p className="text-gray-400 text-sm">
-                    {lastfmUser ? `Connected: ${lastfmUser.username}` : "Track your listening history"}
-                  </p>
-                  {lastfmUser?.profile && (
-                    <p className="text-gray-500 text-xs">
-                      {lastfmUser.profile.followers} scrobbles • {lastfmUser.profile.country}
-                    </p>
-                  )}
-                </div>
-              </div>
-              {lastfmUser ? (
-                <button
-                  onClick={disconnectLastfm}
-                  className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-4 py-2 rounded-full transition-all"
-                >
-                  Disconnect
-                </button>
-              ) : (
-                <button
-                  onClick={connectLastfm}
-                  disabled={isLoading}
-                  className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full transition-all"
-                >
-                  {isLoading ? "Connecting..." : "Connect"}
-                </button>
-              )}
-            </div>
-          </div>
+        {/* Tabs */}
+        <div className="flex gap-4 mb-8 justify-center">
+          <button
+            onClick={() => setActiveTab('services')}
+            className={`px-6 py-3 rounded-full transition-all ${
+              activeTab === 'services' 
+                ? 'bg-white/20 text-white' 
+                : 'bg-white/10 text-gray-400 hover:bg-white/15'
+            }`}
+          >
+            🎵 Services
+          </button>
+          <button
+            onClick={() => setActiveTab('portrait')}
+            className={`px-6 py-3 rounded-full transition-all ${
+              activeTab === 'portrait' 
+                ? 'bg-white/20 text-white' 
+                : 'bg-white/10 text-gray-400 hover:bg-white/15'
+            }`}
+          >
+            🎨 Music Portrait
+          </button>
+          <button
+            onClick={() => setActiveTab('stats')}
+            className={`px-6 py-3 rounded-full transition-all ${
+              activeTab === 'stats' 
+                ? 'bg-white/20 text-white' 
+                : 'bg-white/10 text-gray-400 hover:bg-white/15'
+            }`}
+          >
+            📊 Statistics
+          </button>
         </div>
 
-        {/* Top Tracks from Last.fm */}
-        {lastfmUser && (
-          <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 mb-8">
-            <h2 className="text-2xl font-bold text-white mb-6">🎧 Your Top Tracks (Last.fm)</h2>
-            
-            {isLoadingTracks ? (
-              <div className="text-center py-8">
-                <div className="text-white">Loading tracks...</div>
-              </div>
-            ) : topTracks.length > 0 ? (
-              <div className="space-y-3">
-                {topTracks.map((track, index) => (
-                  <div key={index} className="bg-black/30 rounded-lg p-4 flex items-center gap-4">
-                    <div className="text-2xl text-gray-400 w-8 text-center">
-                      {index + 1}
-                    </div>
-                    {track.imageUrl && (
-                      <img 
-                        src={track.imageUrl} 
-                        alt={track.title}
-                        className="w-12 h-12 rounded"
-                      />
-                    )}
-                    <div className="flex-1">
-                      <p className="text-white font-semibold">{track.title}</p>
-                      <p className="text-gray-400 text-sm">{track.artist}</p>
-                    </div>
-                    {track.playCount && (
-                      <div className="text-gray-500 text-sm">
-                        {track.playCount} plays
-                      </div>
-                    )}
+        {/* Content */}
+        <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8">
+          {activeTab === 'services' && (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-bold text-white mb-6">🎵 Music Services</h2>
+              
+              {/* Spotify */}
+              <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                    <span className="text-2xl">🎵</span>
                   </div>
-                ))}
+                  <div>
+                    <h3 className="text-white font-bold">Spotify</h3>
+                    <p className="text-gray-400 text-sm">
+                      {spotifyUser ? `Connected: ${spotifyUser.name || spotifyUser.email}` : "Stream and control music"}
+                    </p>
+                  </div>
+                </div>
+                {spotifyUser ? (
+                  <button
+                    onClick={disconnectSpotify}
+                    className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-4 py-2 rounded-full"
+                  >
+                    Disconnect
+                  </button>
+                ) : (
+                  <button
+                    onClick={connectSpotify}
+                    disabled={loadingStates.spotify}
+                    className={`px-6 py-2 rounded-full transition-all ${
+                      loadingStates.spotify 
+                        ? "bg-gray-600 text-gray-300 cursor-wait" 
+                        : "bg-green-500 hover:bg-green-600 text-white"
+                    }`}
+                  >
+                    {loadingStates.spotify ? "Connecting..." : "Connect"}
+                  </button>
+                )}
               </div>
-            ) : (
-              <p className="text-gray-400">No tracks data available yet</p>
-            )}
-          </div>
-        )}
+
+              {/* Apple Music */}
+              <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between opacity-75">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-pink-500 rounded-full flex items-center justify-center">
+                    <span className="text-2xl">🎵</span>
+                  </div>
+                  <div>
+                    <h3 className="text-white font-bold">Apple Music</h3>
+                    <p className="text-gray-400 text-sm">Coming soon</p>
+                  </div>
+                </div>
+                <button
+                  onClick={connectApple}
+                  className="bg-gray-500 text-white px-6 py-2 rounded-full cursor-not-allowed"
+                  disabled
+                >
+                  Connect
+                </button>
+              </div>
+
+              {/* Last.fm */}
+              <div className="bg-black/30 rounded-xl p-6 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
+                    <span className="text-2xl">📊</span>
+                  </div>
+                  <div>
+                    <h3 className="text-white font-bold">Last.fm</h3>
+                    <p className="text-gray-400 text-sm">Track your listening history</p>
+                  </div>
+                </div>
+                <button
+                  onClick={connectLastfm}
+                  disabled={loadingStates.lastfm}
+                  className={`px-6 py-2 rounded-full transition-all ${
+                    loadingStates.lastfm 
+                      ? "bg-gray-600 text-gray-300 cursor-wait" 
+                      : "bg-red-600 hover:bg-red-700 text-white"
+                  }`}
+                >
+                  {loadingStates.lastfm ? "Connecting..." : "Connect"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'portrait' && (
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-6">🎨 Music Portrait</h2>
+              {spotifyUser ? (
+                <MusicPortrait userId={userData.worldId} />
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-400 mb-4">Connect Spotify to see your music portrait</p>
+                  <button
+                    onClick={() => setActiveTab('services')}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-full"
+                  >
+                    Go to Services
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'stats' && (
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-6">📊 Statistics</h2>
+              <div className="text-center py-8">
+                <p className="text-gray-400">Detailed statistics coming soon...</p>
+                <p className="text-gray-500 text-sm mt-2">Track your party history, voting patterns, and more!</p>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Back Button */}
-        <div className="text-center">
+        <div className="text-center mt-8">
           <button
             onClick={() => router.push("/")}
             className="bg-white/20 hover:bg-white/30 text-white px-8 py-3 rounded-full transition-all"
