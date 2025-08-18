@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import MusicPortrait from "@/components/profile/MusicPortrait";
+import MusicPortrait from "../../components/profile/MusicPortrait";
 
 interface UserData {
   id?: string;
