@@ -11,9 +11,9 @@ export default function ProfileClient() {
   const [activeTab, setActiveTab] = useState('services');
   const [loading, setLoading] = useState(true);
   const [musicProfile, setMusicProfile] = useState<Record<string, any> | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   useEffect(() => {
-    // Проверяем что мы на клиенте
     if (typeof window === 'undefined') return;
     
     try {
@@ -27,13 +27,18 @@ export default function ProfileClient() {
       const data = JSON.parse(stored);
       setUserData(data);
 
-      // Проверяем Spotify
       const spotifyStored = localStorage.getItem("spotify_user");
       if (spotifyStored) {
-        setSpotifyUser(JSON.parse(spotifyStored));
+        try {
+          const spotifyData = JSON.parse(spotifyStored);
+          setSpotifyUser(spotifyData);
+          // Автоматически загружаем музыкальный профиль если Spotify подключен
+          loadMusicProfile(data);
+        } catch (e) {
+          console.error("Error parsing Spotify data:", e);
+        }
       }
 
-      // Проверяем callback от Spotify
       if (searchParams?.get("spotify") === "connected") {
         handleSpotifyCallback();
       }
@@ -43,7 +48,7 @@ export default function ProfileClient() {
     } finally {
       setLoading(false);
     }
-  }, [searchParams, router]);
+  }, []);
 
   const handleSpotifyCallback = () => {
     try {
@@ -55,6 +60,10 @@ export default function ProfileClient() {
         const user = JSON.parse(userData);
         setSpotifyUser(user);
         localStorage.setItem("spotify_user", JSON.stringify(user));
+        // Загружаем профиль после подключения Spotify
+        if (userData) {
+          loadMusicProfile(userData);
+        }
       }
     } catch (error) {
       console.error("Error handling Spotify callback:", error);
@@ -67,21 +76,27 @@ export default function ProfileClient() {
 
   const disconnectSpotify = () => {
     setSpotifyUser(null);
+    setMusicProfile(null);
     localStorage.removeItem("spotify_user");
     localStorage.removeItem("spotify_connected");
     document.cookie = "spotify_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     document.cookie = "spotify_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   };
 
-  const loadMusicProfile = async () => {
-    if (!userData) return;
+  const loadMusicProfile = async (userDataParam?: any) => {
+    const data = userDataParam || userData;
+    if (!data) return;
+    
+    setProfileLoading(true);
     
     try {
-      const userId = userData.nullifier_hash || 
-                     userData.worldId || 
-                     userData.id || 
-                     userData.user_id ||
+      const userId = data.nullifier_hash || 
+                     data.worldId || 
+                     data.id || 
+                     data.user_id ||
                      "demo_user";
+
+      console.log("Loading music profile for:", userId);
 
       const response = await fetch('/api/music/analyze', {
         method: 'POST',
@@ -90,9 +105,21 @@ export default function ProfileClient() {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        setMusicProfile(data.profile);
+        const result = await response.json();
+        console.log("Music profile received:", result);
+        
+        // Нормализуем данные профиля
+        const normalizedProfile = {
+          musicPersonality: result.profile?.musicPersonality || "Music Explorer",
+          energyLevel: result.profile?.energyLevel || 70,
+          diversityScore: result.profile?.diversityScore || 80,
+          // ВАЖНО: Обрабатываем topGenres правильно
+          topGenres: normalizeGenres(result.profile?.topGenres || [])
+        };
+        
+        setMusicProfile(normalizedProfile);
       } else {
+        // Fallback данные
         setMusicProfile({
           topGenres: ["Pop", "Rock", "Electronic", "Hip-Hop", "Jazz"],
           musicPersonality: "Eclectic Explorer",
@@ -102,13 +129,34 @@ export default function ProfileClient() {
       }
     } catch (error) {
       console.error("Error loading music profile:", error);
+      // Демо данные при ошибке
       setMusicProfile({
         topGenres: ["Pop", "Rock", "Electronic"],
         musicPersonality: "Music Lover",
         energyLevel: 70,
         diversityScore: 80
       });
+    } finally {
+      setProfileLoading(false);
     }
+  };
+
+  // Функция для нормализации жанров - обрабатывает и объекты и строки
+  const normalizeGenres = (genres: any[]): string[] => {
+    if (!Array.isArray(genres)) return [];
+    
+    return genres.map(item => {
+      // Если это объект с полем genre
+      if (typeof item === 'object' && item !== null) {
+        return item.genre || item.name || String(item);
+      }
+      // Если это строка
+      if (typeof item === 'string') {
+        return item;
+      }
+      // Fallback
+      return String(item);
+    }).filter(Boolean).slice(0, 10); // Максимум 10 жанров
   };
 
   const handleLogout = () => {
@@ -149,6 +197,7 @@ export default function ProfileClient() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black">
       <div className="max-w-4xl mx-auto p-6">
+        {/* HEADER */}
         <div className="bg-white/10 backdrop-blur rounded-3xl p-6 mb-6">
           <div className="flex justify-between items-center">
             <div>
@@ -166,10 +215,11 @@ export default function ProfileClient() {
           </div>
         </div>
 
+        {/* TABS */}
         <div className="flex gap-2 mb-6 justify-center">
           <button
             onClick={() => setActiveTab('services')}
-            className={`px-6 py-2 rounded-full ${
+            className={`px-6 py-2 rounded-full transition-all ${
               activeTab === 'services' 
                 ? 'bg-purple-600 text-white' 
                 : 'bg-white/10 text-gray-300'
@@ -180,9 +230,11 @@ export default function ProfileClient() {
           <button
             onClick={() => {
               setActiveTab('portrait');
-              if (!musicProfile && spotifyUser) loadMusicProfile();
+              if (!musicProfile && spotifyUser && !profileLoading) {
+                loadMusicProfile();
+              }
             }}
-            className={`px-6 py-2 rounded-full ${
+            className={`px-6 py-2 rounded-full transition-all ${
               activeTab === 'portrait' 
                 ? 'bg-purple-600 text-white' 
                 : 'bg-white/10 text-gray-300'
@@ -192,7 +244,7 @@ export default function ProfileClient() {
           </button>
           <button
             onClick={() => setActiveTab('stats')}
-            className={`px-6 py-2 rounded-full ${
+            className={`px-6 py-2 rounded-full transition-all ${
               activeTab === 'stats' 
                 ? 'bg-purple-600 text-white' 
                 : 'bg-white/10 text-gray-300'
@@ -202,35 +254,39 @@ export default function ProfileClient() {
           </button>
         </div>
 
+        {/* CONTENT */}
         <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
+          {/* SERVICES TAB */}
           {activeTab === 'services' && (
             <div className="space-y-4">
               <h2 className="text-2xl font-bold text-white mb-4">Music Services</h2>
               
+              {/* Spotify */}
               <div className="bg-black/30 rounded-xl p-4 flex justify-between items-center">
                 <div>
                   <h3 className="text-white font-bold">Spotify</h3>
                   <p className="text-gray-400 text-sm">
-                    {spotifyUser ? `Connected: ${spotifyUser.email || spotifyUser.id}` : 'Not connected'}
+                    {spotifyUser ? `Connected: ${spotifyUser.email || spotifyUser.id || 'Active'}` : 'Not connected'}
                   </p>
                 </div>
                 {spotifyUser ? (
                   <button
                     onClick={disconnectSpotify}
-                    className="bg-red-500/30 text-red-300 px-4 py-2 rounded-full"
+                    className="bg-red-500/30 hover:bg-red-500/40 text-red-300 px-4 py-2 rounded-full transition-all"
                   >
                     Disconnect
                   </button>
                 ) : (
                   <button
                     onClick={connectSpotify}
-                    className="bg-green-500 text-white px-4 py-2 rounded-full"
+                    className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full transition-all"
                   >
                     Connect
                   </button>
                 )}
               </div>
 
+              {/* Apple Music */}
               <div className="bg-black/30 rounded-xl p-4 flex justify-between items-center opacity-50">
                 <div>
                   <h3 className="text-white font-bold">Apple Music</h3>
@@ -241,6 +297,7 @@ export default function ProfileClient() {
                 </button>
               </div>
 
+              {/* Last.fm */}
               <div className="bg-black/30 rounded-xl p-4 flex justify-between items-center opacity-50">
                 <div>
                   <h3 className="text-white font-bold">Last.fm</h3>
@@ -253,6 +310,7 @@ export default function ProfileClient() {
             </div>
           )}
 
+          {/* MUSIC PORTRAIT TAB */}
           {activeTab === 'portrait' && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-4">Music Portrait</h2>
@@ -262,48 +320,91 @@ export default function ProfileClient() {
                   <p className="text-gray-400 mb-4">Connect Spotify to see your music portrait</p>
                   <button
                     onClick={() => setActiveTab('services')}
-                    className="bg-purple-600 text-white px-6 py-2 rounded-full"
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-full transition-all"
                   >
                     Go to Services
                   </button>
                 </div>
+              ) : profileLoading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+                  <p className="text-gray-400">Analyzing your music taste...</p>
+                </div>
               ) : musicProfile ? (
                 <div className="space-y-4">
+                  {/* Personality */}
                   <div className="bg-purple-600/20 rounded-xl p-4">
                     <p className="text-gray-400 text-sm">Your Music Personality</p>
-                    <p className="text-2xl font-bold text-white">{musicProfile.musicPersonality}</p>
+                    <p className="text-2xl font-bold text-white">
+                      {musicProfile.musicPersonality || "Music Explorer"}
+                    </p>
                   </div>
 
+                  {/* Genres - БЕЗОПАСНОЕ ОТОБРАЖЕНИЕ */}
                   <div className="bg-black/30 rounded-xl p-4">
                     <p className="text-gray-400 text-sm mb-2">Top Genres</p>
                     <div className="flex flex-wrap gap-2">
-                      {musicProfile.topGenres?.map((genre: string, i: number) => (
-                        <span key={i} className="bg-purple-600/30 text-white px-3 py-1 rounded-full text-sm">
-                          {genre}
+                      {Array.isArray(musicProfile.topGenres) && musicProfile.topGenres.map((genre: string, i: number) => (
+                        <span 
+                          key={`genre-${i}`} 
+                          className="bg-purple-600/30 text-white px-3 py-1 rounded-full text-sm"
+                        >
+                          {String(genre)}
                         </span>
                       ))}
+                      {(!musicProfile.topGenres || musicProfile.topGenres.length === 0) && (
+                        <span className="text-gray-500">No genres data available</span>
+                      )}
                     </div>
                   </div>
 
+                  {/* Stats */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-black/30 rounded-xl p-4">
                       <p className="text-gray-400 text-sm">Energy Level</p>
-                      <p className="text-xl font-bold text-white">{musicProfile.energyLevel}%</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="flex-1 bg-white/10 rounded-full h-2">
+                          <div 
+                            className="bg-gradient-to-r from-yellow-400 to-orange-400 h-2 rounded-full transition-all"
+                            style={{ width: `${musicProfile.energyLevel || 0}%` }}
+                          />
+                        </div>
+                        <p className="text-xl font-bold text-white">
+                          {musicProfile.energyLevel || 0}%
+                        </p>
+                      </div>
                     </div>
                     <div className="bg-black/30 rounded-xl p-4">
                       <p className="text-gray-400 text-sm">Diversity Score</p>
-                      <p className="text-xl font-bold text-white">{musicProfile.diversityScore}%</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="flex-1 bg-white/10 rounded-full h-2">
+                          <div 
+                            className="bg-gradient-to-r from-blue-400 to-purple-400 h-2 rounded-full transition-all"
+                            style={{ width: `${musicProfile.diversityScore || 0}%` }}
+                          />
+                        </div>
+                        <p className="text-xl font-bold text-white">
+                          {musicProfile.diversityScore || 0}%
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-gray-400">Loading music profile...</p>
+                  <p className="text-gray-400 mb-4">Unable to load music profile</p>
+                  <button
+                    onClick={() => loadMusicProfile()}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-full transition-all"
+                  >
+                    Try Again
+                  </button>
                 </div>
               )}
             </div>
           )}
 
+          {/* STATISTICS TAB */}
           {activeTab === 'stats' && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-4">Statistics</h2>
@@ -321,14 +422,18 @@ export default function ProfileClient() {
                   <p className="text-gray-400 text-sm">Top Picks</p>
                 </div>
               </div>
+              <div className="mt-6 text-center">
+                <p className="text-gray-500 text-sm">Join parties to see your statistics!</p>
+              </div>
             </div>
           )}
         </div>
 
+        {/* BACK BUTTON */}
         <div className="text-center mt-6">
           <button
             onClick={() => router.push("/")}
-            className="bg-white/20 text-white px-6 py-2 rounded-full"
+            className="bg-white/20 hover:bg-white/30 text-white px-6 py-2 rounded-full transition-all"
           >
             Back to Home
           </button>
