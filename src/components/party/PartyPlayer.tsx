@@ -1,5 +1,5 @@
-// components/party/PartyPlayer.tsx
-// Полноценный музыкальный плеер для party
+// src/components/party/PartyPlayer.tsx
+// ИСПРАВЛЕННЫЙ компонент без ошибок рендеринга
 
 'use client';
 
@@ -183,8 +183,28 @@ export default function PartyPlayer({ tracks, partyCode, isHost = false }: Party
     return shuffled;
   };
 
-  // Текущий трек
-  const currentTrack = player.current_track || sortedTracks[currentTrackIndex];
+  // ИСПРАВЛЕНО: Безопасное получение данных текущего трека
+  const getSpotifyTrackInfo = () => {
+    if (!player.current_track) return null;
+    
+    try {
+      // Spotify track имеет структуру с вложенными объектами
+      const track = player.current_track;
+      return {
+        name: track.name || 'Unknown Track',
+        artist: track.artists?.[0]?.name || 'Unknown Artist',
+        album: track.album?.name || 'Unknown Album',
+        albumArt: track.album?.images?.[0]?.url || null
+      };
+    } catch (e) {
+      console.error('Error parsing Spotify track:', e);
+      return null;
+    }
+  };
+
+  // Текущий трек - либо от Spotify SDK, либо из нашего списка
+  const spotifyTrackInfo = getSpotifyTrackInfo();
+  const currentTrack = spotifyTrackInfo || sortedTracks[currentTrackIndex];
 
   // Progress bar percentage
   const progress = player.duration > 0 
@@ -212,7 +232,7 @@ export default function PartyPlayer({ tracks, partyCode, isHost = false }: Party
   return (
     <div className="bg-gradient-to-br from-purple-900 via-purple-800 to-black rounded-2xl p-6 text-white">
       {/* Error message */}
-      {error && (
+      {error && error !== 'Please connect Spotify to play music' && (
         <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg flex items-center gap-2">
           <AlertCircle className="w-5 h-5 text-red-400" />
           <span className="text-sm">{error}</span>
@@ -227,15 +247,15 @@ export default function PartyPlayer({ tracks, partyCode, isHost = false }: Party
         </div>
       )}
 
-      {/* Current track info */}
+      {/* Current track info - ИСПРАВЛЕНО */}
       <div className="mb-6">
         {currentTrack ? (
           <div className="flex items-center gap-4">
             {/* Album art */}
             <div className="w-20 h-20 bg-purple-700/50 rounded-lg flex items-center justify-center flex-shrink-0">
-              {currentTrack.albumArt || (currentTrack as any).album?.images?.[0]?.url ? (
+              {currentTrack.albumArt ? (
                 <img 
-                  src={currentTrack.albumArt || (currentTrack as any).album?.images?.[0]?.url}
+                  src={currentTrack.albumArt}
                   alt={currentTrack.name}
                   className="w-full h-full object-cover rounded-lg"
                 />
@@ -244,25 +264,25 @@ export default function PartyPlayer({ tracks, partyCode, isHost = false }: Party
               )}
             </div>
             
-            {/* Track details */}
+            {/* Track details - ИСПРАВЛЕНО */}
             <div className="flex-1 min-w-0">
               <h3 className="font-bold text-lg truncate">
                 {currentTrack.name}
               </h3>
               <p className="text-purple-200 text-sm truncate">
-                {currentTrack.artist || (currentTrack as any).artists?.[0]?.name}
+                {currentTrack.artist}
               </p>
               {currentTrack.album && (
                 <p className="text-purple-300 text-xs truncate">
-                  {currentTrack.album || (currentTrack as any).album?.name}
+                  {currentTrack.album}
                 </p>
               )}
             </div>
 
-            {/* Vote count */}
-            {(currentTrack as any).voteCount !== undefined && (
+            {/* Vote count - только для треков из списка */}
+            {'voteCount' in currentTrack && (
               <div className="text-center">
-                <div className="text-2xl font-bold">{(currentTrack as any).voteCount}</div>
+                <div className="text-2xl font-bold">{currentTrack.voteCount}</div>
                 <div className="text-xs text-purple-300">votes</div>
               </div>
             )}
