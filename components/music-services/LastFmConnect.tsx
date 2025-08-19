@@ -82,7 +82,7 @@ export default function LastFmConnect({ onConnect, onDisconnect }: LastFmConnect
     
     try {
       // Редиректим на endpoint авторизации
-      window.location.href = '/api/lastfm/auth';
+      window.location.href = '/api/music/lastfm/connect';
     } catch (error) {
       console.error('Error connecting Last.fm:', error);
       setError('Не удалось начать авторизацию');
@@ -98,7 +98,7 @@ export default function LastFmConnect({ onConnect, onDisconnect }: LastFmConnect
     setError(null);
     
     try {
-      const response = await fetch('/api/lastfm/auth', {
+      const response = await fetch('/api/music/lastfm/connect', {
         method: 'DELETE',
       });
       

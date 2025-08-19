@@ -11,7 +11,6 @@ export default function SignInPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Check if already logged in
     const hasAuth = localStorage.getItem('world_id') || 
                    document.cookie.includes('spotify_user') ||
                    document.cookie.includes('lastfm_username');
@@ -56,9 +55,15 @@ export default function SignInPage() {
 
           <div className="bg-white/5 backdrop-blur rounded-2xl p-6">
             <h3 className="text-white font-medium mb-4">Music Services</h3>
-            <div className="space-y-3">
-              <SpotifyConnect />
-              <LastFmConnect />
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-white text-sm mb-2">Spotify</h4>
+                <SpotifyConnect />
+              </div>
+              <div>
+                <h4 className="text-white text-sm mb-2">Last.fm</h4>
+                <LastFmConnect />
+              </div>
             </div>
           </div>
         </div>
