@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { Music, Users, Share2, Plus, ArrowLeft } from 'lucide-react';
+import { Music, Users, Share2, ArrowLeft, Search } from 'lucide-react';
+import SmartPlaylist from '../../../components/party/SmartPlaylist';
+import SpotifyTrackSearch from '../../../components/party/SpotifyTrackSearch';
 
 interface Party {
   id: string;
@@ -11,6 +13,8 @@ interface Party {
   description?: string;
   memberCount: number;
   trackCount: number;
+  members?: any[];
+  tracks?: any[];
 }
 
 export default function PartyPage() {
@@ -22,6 +26,7 @@ export default function PartyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState<'playlist' | 'search'>('playlist');
 
   useEffect(() => {
     if (code) {
@@ -83,7 +88,7 @@ export default function PartyPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black text-white">
-      <div className="max-w-4xl mx-auto p-6">
+      <div className="max-w-6xl mx-auto p-6">
         {/* Header */}
         <div className="bg-white/10 backdrop-blur rounded-3xl p-6 mb-6">
           <div className="flex justify-between items-start">
@@ -125,26 +130,52 @@ export default function PartyPage() {
           </button>
         </div>
 
-        {/* Add Track Button */}
-        <div className="bg-white/10 backdrop-blur rounded-3xl p-6 mb-6">
-          <button className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2">
-            <Plus className="w-5 h-5" />
-            Add Track
-          </button>
+        {/* Tabs */}
+        <div className="bg-white/10 backdrop-blur rounded-3xl p-2 mb-6">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setActiveTab('playlist')}
+              className={`flex-1 py-3 px-4 rounded-2xl font-medium transition-all flex items-center justify-center gap-2 ${
+                activeTab === 'playlist'
+                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Music className="w-4 h-4" />
+              Smart Playlist
+            </button>
+            <button
+              onClick={() => setActiveTab('search')}
+              className={`flex-1 py-3 px-4 rounded-2xl font-medium transition-all flex items-center justify-center gap-2 ${
+                activeTab === 'search'
+                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Search className="w-4 h-4" />
+              Search Tracks
+            </button>
+          </div>
         </div>
 
-        {/* Tracks List */}
-        <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
-          <h2 className="text-xl font-bold mb-4">Playlist</h2>
-          {party.trackCount === 0 ? (
-            <div className="text-center py-8 text-gray-400">
-              <Music className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No tracks yet. Add the first one!</p>
-            </div>
-          ) : (
-            <p className="text-gray-400">Track list coming soon...</p>
-          )}
-        </div>
+        {/* Content */}
+        {activeTab === 'playlist' ? (
+          <SmartPlaylist 
+            partyCode={code} 
+            memberCount={party.memberCount || 1}
+          />
+        ) : (
+          <SpotifyTrackSearch 
+            partyCode={code}
+            onTrackAdded={(track) => {
+              // Update track count
+              setParty(prev => prev ? {
+                ...prev,
+                trackCount: prev.trackCount + 1
+              } : null);
+            }}
+          />
+        )}
       </div>
     </div>
   );
