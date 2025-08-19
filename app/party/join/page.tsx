@@ -1,7 +1,6 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Music, MapPin, Users, Clock, Search, QrCode, Loader2 } from 'lucide-react';
 
@@ -15,7 +14,8 @@ interface PublicParty {
   createdAt: string;
 }
 
-export default function JoinPartyPage() {
+// Внутренний компонент с useSearchParams
+function JoinPartyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [code, setCode] = useState('');
@@ -277,5 +277,21 @@ export default function JoinPartyPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Главный компонент с Suspense
+export default function JoinPartyPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
+        <div className="text-white">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    }>
+      <JoinPartyContent />
+    </Suspense>
   );
 }
