@@ -98,7 +98,7 @@ export default function MusicPortrait({ userId }: { userId?: string }) {
       }
     } catch (error) {
       console.error('❌ Analysis error:', error);
-      setError('Не удалось проанализировать музыкальные предпочтения. Подключите музыкальные сервисы.');
+      setError('Failed to analyze music preferences. Please connect music services.');
     } finally {
       setIsLoading(false);
     }
@@ -108,7 +108,7 @@ export default function MusicPortrait({ userId }: { userId?: string }) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-purple-400 mb-4" />
-        <p className="text-gray-400">Анализируем вашу музыку...</p>
+        <p className="text-gray-400">Analyzing your music...</p>
         <p className="text-gray-500 text-sm mt-2">Это может занять несколько секунд</p>
       </div>
     );
@@ -140,7 +140,7 @@ export default function MusicPortrait({ userId }: { userId?: string }) {
           className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
         >
           <RefreshCw className="h-4 w-4" />
-          Анализировать музыку
+          Analyze Music
         </button>
       </div>
     );
@@ -262,12 +262,12 @@ export default function MusicPortrait({ userId }: { userId?: string }) {
           <h4 className="text-lg font-semibold text-white mb-4">Top Tracks</h4>
           <div className="space-y-3">
             {profile.topTracks.map((track, index) => (
-              <div key={`${track.name}-${track.artist}`} className="flex items-center gap-3">
+              <div key={`${track.name}-${typeof track.artist === "string" ? track.artist : (track.artist?.name || track.artist?.["#text"] || "Unknown Artist")}`} className="flex items-center gap-3">
                 <span className="text-purple-400 font-bold w-6">#{index + 1}</span>
                 <div className="flex-1">
                   <p className="text-white font-medium">{track.name}</p>
                   <p className="text-gray-400 text-sm">
-                    {track.artist}
+                    {typeof track.artist === "string" ? track.artist : (track.artist?.name || track.artist?.["#text"] || "Unknown Artist")}
                     {track.album && ` • ${track.album}`}
                     {track.source && (
                       <span className="text-gray-500 ml-2">({track.source})</span>

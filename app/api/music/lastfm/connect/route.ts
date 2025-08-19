@@ -1,177 +1,152 @@
-// app/api/music/lastfm/connect/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 export async function GET(request: NextRequest) {
-  try {
-    const apiKey = process.env.LASTFM_API_KEY;
-    
-    if (!apiKey) {
-      return NextResponse.json({ error: 'Last.fm API key not configured' }, { status: 500 });
+  const searchParams = request.nextUrl.searchParams;
+  const token = searchParams.get('token');
+  
+  // Если есть токен - обрабатываем callback
+  if (token) {
+    try {
+      const apiKey = process.env.LASTFM_API_KEY!;
+      const apiSecret = process.env.LASTFM_API_SECRET!;
+      
+      // Создаём подпись для получения сессии
+      const sig = crypto
+        .createHash('md5')
+        .update(`api_key${apiKey}methodauth.getSessiontoken${token}${apiSecret}`)
+        .digest('hex');
+      
+      // Получаем сессию
+      const sessionUrl = `https://ws.audioscrobbler.com/2.0/?method=auth.getSession&api_key=${apiKey}&token=${token}&api_sig=${sig}&format=json`;
+      const sessionResponse = await fetch(sessionUrl);
+      const sessionData = await sessionResponse.json();
+      
+      if (sessionData.session) {
+        // Создаём ответ с редиректом
+        const response = NextResponse.redirect(new URL('/profile?lastfm=connected&tab=services', request.url));
+        
+        // Сохраняем сессию в cookies
+        response.cookies.set('lastfm_session', sessionData.session.key, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24 * 365 // 1 год
+        });
+        
+        response.cookies.set('lastfm_username', sessionData.session.name, {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24 * 365
+        });
+        
+        return response;
+      } else {
+        return NextResponse.redirect(new URL('/profile?error=lastfm_connection_failed', request.url));
+      }
+    } catch (error) {
+      console.error('Last.fm callback error:', error);
+      return NextResponse.redirect(new URL('/profile?error=lastfm_error', request.url));
     }
-
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://tootfm.world';
-    const callbackUrl = `${baseUrl}/api/music/lastfm/callback`;
-    const authUrl = `https://www.last.fm/api/auth/?api_key=${apiKey}&cb=${encodeURIComponent(callbackUrl)}`;
-    
-    // HTML страница БЕЗ автоматического редиректа
-    const htmlPage = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Connect Last.fm to tootFM</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 2rem;
-        }
-        
-        .container {
-            background: rgba(255,255,255,0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 3rem;
-            max-width: 500px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-        
-        h1 {
-            font-size: 2rem;
-            margin-bottom: 1rem;
-        }
-        
-        .icon {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-        }
-        
-        .subtitle {
-            opacity: 0.9;
-            margin-bottom: 2rem;
-            font-size: 1.1rem;
-        }
-        
-        .steps {
-            background: rgba(0,0,0,0.2);
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin: 2rem 0;
-            text-align: left;
-        }
-        
-        .step {
-            display: flex;
-            align-items: flex-start;
-            gap: 1rem;
-            margin: 1rem 0;
-        }
-        
-        .step-number {
-            background: rgba(255,255,255,0.2);
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            font-weight: bold;
-        }
-        
-        .button {
-            display: inline-block;
-            background: #d51007;
-            color: white;
-            padding: 1rem 2.5rem;
-            border-radius: 50px;
-            text-decoration: none;
-            font-weight: bold;
-            font-size: 1.1rem;
-            margin: 1rem 0;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(213,16,7,0.4);
-        }
-        
-        .button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(213,16,7,0.5);
-        }
-        
-        .token-section {
-            margin: 2rem 0;
-            padding: 1.5rem;
-            background: rgba(0,0,0,0.3);
-            border-radius: 12px;
-        }
-        
-        .token-input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 2px solid rgba(255,255,255,0.3);
-            background: rgba(255,255,255,0.1);
-            border-radius: 8px;
-            color: white;
-            font-size: 1rem;
-            margin: 0.5rem 0;
-        }
-        
-        .token-input::placeholder {
-            color: rgba(255,255,255,0.6);
-        }
-        
-        .submit-button {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 0.75rem 2rem;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-top: 0.5rem;
-        }
-        
-        .submit-button:hover {
-            background: #5a67d8;
-        }
-        
-        .back-link {
-            color: rgba(255,255,255,0.8);
-            text-decoration: none;
-            margin-top: 2rem;
-            display: inline-block;
-        }
-        
-        .back-link:hover {
-            color: white;
-        }
-        
-        .warning {
-            background: rgba(255,193,7,0.2);
-            border: 1px solid rgba(255,193,7,0.4);
-            border-radius: 8px;
-            padding: 1rem;
-            margin: 1.5rem 0;
-            font-size: 0.9rem;
-        }
-    </style>
-</head>
-<body>
+  }
+  
+  // Показываем страницу подключения
+  const apiKey = process.env.LASTFM_API_KEY;
+  const callbackUrl = process.env.LASTFM_CALLBACK_URL || `${process.env.NEXT_PUBLIC_APP_URL}/api/music/lastfm/connect`;
+  const authUrl = `https://www.last.fm/api/auth/?api_key=${apiKey}&cb=${encodeURIComponent(callbackUrl)}`;
+  
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Connect Last.fm to tootFM</title>
+        <style>
+            body {
+                margin: 0;
+                padding: 20px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .container {
+                background: rgba(255, 255, 255, 0.1);
+                backdrop-filter: blur(10px);
+                border-radius: 20px;
+                padding: 40px;
+                max-width: 500px;
+                width: 100%;
+                text-align: center;
+                color: white;
+            }
+            h1 {
+                margin: 0 0 10px;
+                font-size: 2.5em;
+            }
+            .subtitle {
+                opacity: 0.9;
+                margin-bottom: 30px;
+                font-size: 1.1em;
+            }
+            .steps {
+                text-align: left;
+                background: rgba(0, 0, 0, 0.2);
+                border-radius: 10px;
+                padding: 20px;
+                margin: 30px 0;
+            }
+            .step {
+                margin: 15px 0;
+                display: flex;
+                align-items: flex-start;
+            }
+            .step-number {
+                background: rgba(255, 255, 255, 0.2);
+                border-radius: 50%;
+                width: 30px;
+                height: 30px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-right: 15px;
+                flex-shrink: 0;
+                font-weight: bold;
+            }
+            .button {
+                display: inline-block;
+                background: #d51007;
+                color: white;
+                padding: 15px 40px;
+                border-radius: 50px;
+                text-decoration: none;
+                font-weight: bold;
+                font-size: 1.1em;
+                margin: 20px 0;
+                transition: transform 0.2s, box-shadow 0.2s;
+            }
+            .button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+            }
+            .back-link {
+                color: white;
+                text-decoration: none;
+                opacity: 0.8;
+                margin-top: 20px;
+                display: inline-block;
+            }
+            .back-link:hover {
+                opacity: 1;
+            }
+        </style>
+    </head>
+    <body>
     <div class="container">
-        <div class="icon">🎵</div>
-        <h1>Connect Last.fm</h1>
-        <p class="subtitle">Track your complete listening history</p>
+        <h1>🎵 Connect Last.fm</h1>
+        <p class="subtitle">Sync your music history with tootFM</p>
         
         <div class="steps">
             <div class="step">
@@ -180,100 +155,30 @@ export async function GET(request: NextRequest) {
             </div>
             <div class="step">
                 <div class="step-number">2</div>
-                <div>Authorize tootFM to access your Last.fm data</div>
+                <div>Log in to your Last.fm account</div>
             </div>
             <div class="step">
                 <div class="step-number">3</div>
-                <div>You'll see "Application authenticated"</div>
+                <div>Authorize tootFM to access your data</div>
             </div>
             <div class="step">
                 <div class="step-number">4</div>
-                <div><strong>Copy the entire URL from your browser</strong></div>
-            </div>
-            <div class="step">
-                <div class="step-number">5</div>
-                <div>Come back here and paste it below</div>
+                <div>You'll be redirected back automatically</div>
             </div>
         </div>
         
-        <a href="${authUrl}" target="_blank" class="button">
+        <a href="${authUrl}" class="button">
             Connect with Last.fm
         </a>
         
-        <div class="warning">
-            ⚠️ Last.fm will NOT redirect you back automatically. 
-            You must copy the URL and paste it below.
-        </div>
-        
-        <div class="token-section">
-            <h3>Step 5: Paste the URL here</h3>
-            <input 
-                type="text" 
-                id="tokenUrl" 
-                class="token-input"
-                placeholder="Paste the Last.fm URL here..."
-            />
-            <button onclick="processUrl()" class="submit-button">Complete Connection</button>
-        </div>
-        
+        <br>
         <a href="/profile" class="back-link">← Back to Profile</a>
     </div>
-    
-    <script>
-        function processUrl() {
-            const input = document.getElementById('tokenUrl');
-            const url = input.value.trim();
-            
-            if (!url) {
-                alert('Please paste the URL first');
-                return;
-            }
-            
-            // Extract token from URL
-            let token = null;
-            
-            // Try different URL patterns
-            const patterns = [
-                /token=([^&]+)/,
-                /\?token=([^&]+)/,
-                /&token=([^&]+)/
-            ];
-            
-            for (const pattern of patterns) {
-                const match = url.match(pattern);
-                if (match) {
-                    token = match[1];
-                    break;
-                }
-            }
-            
-            if (!token) {
-                alert('Could not find token in URL. Make sure you copied the complete URL.');
-                return;
-            }
-            
-            // Redirect to callback
-            window.location.href = '${callbackUrl}?token=' + token;
-        }
-        
-        // Check if Enter is pressed
-        document.getElementById('tokenUrl').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                processUrl();
-            }
-        });
-    </script>
-</body>
-</html>`;
-    
-    return new NextResponse(htmlPage, {
-      headers: { 
-        'Content-Type': 'text/html; charset=utf-8'
-      }
-    });
-    
-  } catch (error) {
-    console.error('Last.fm connect error:', error);
-    return NextResponse.json({ error: 'Failed to initiate Last.fm connection' }, { status: 500 });
-  }
+    </body>
+    </html>
+  `;
+  
+  return new NextResponse(html, {
+    headers: { 'Content-Type': 'text/html' }
+  });
 }
