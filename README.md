@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## tootFM World
 
-## Getting Started
+Social music parties powered by taste graphs. Create a party, invite friends, connect music services, and build a smart crowd-sourced playlist.
 
-First, run the development server:
+### Tech stack
+- **Framework**: Next.js 15 (App Router) + React 19
+- **Styling**: Tailwind CSS
+- **Database**: PostgreSQL via Prisma
+- **APIs**: Spotify OAuth, Last.fm, Apple Music (JWT helper in codebase)
+- **Real-time**: socket.io (dependency present; server optional)
 
+### Quick start
+1) Copy envs and fill values:
+```bash
+cp .env.example .env.local
+```
+2) Install deps and set up DB:
+```bash
+npm install
+npx prisma generate
+npx prisma migrate dev --name init
+```
+3) Run the app:
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
+Open http://localhost:3000
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Key features
+- **Parties**: create/join via short codes; add and vote tracks
+- **Smart playlist**: auto-generate a starter playlist for the room
+- **Music services**: connect Spotify, Last.fm; Apple Music JWT helper available
+- **Profiles**: per-user music profile model for future taste analysis
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Docs
+- See `docs/SETUP.md` for local setup
+- See `docs/ENVIRONMENT.md` and `.env.example` for all required env vars
+- See `docs/API.md` for REST endpoints
+- See `docs/ARCHITECTURE.md` and `docs/DATABASE.md` for internals
+- See `docs/DEPLOYMENT.md` to deploy (Vercel-friendly)
+- See `docs/TROUBLESHOOTING.md` for common fixes
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Repository layout (high-level)
+- `app/` Next.js routes and API handlers
+- `components/` UI components (party, music-services, profile)
+- `lib/` Prisma client and service adapters
+- `prisma/` schema and migrations
+- `docs/` full project documentation
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### License
+MIT or as specified by the repository owner.
