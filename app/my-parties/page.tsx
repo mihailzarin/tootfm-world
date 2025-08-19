@@ -24,28 +24,37 @@ export default function MyPartiesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if user is logged in
-    if (!ClientAuth.isLoggedIn()) {
-      router.push('/signin');
-      return;
-    }
-
     fetchParties();
   }, []);
 
   const fetchParties = async () => {
     try {
-      const response = await fetch('/api/user/parties');
-      if (!response.ok) {
-        if (response.status === 401) {
-          router.push('/signin');
-          return;
+      // Get World ID from localStorage for backward compatibility
+      const userData = localStorage.getItem('user_data');
+      let worldId = null;
+      
+      if (userData) {
+        try {
+          const parsed = JSON.parse(userData);
+          worldId = parsed.worldId;
+        } catch (e) {
+          console.error('Error parsing user data:', e);
         }
-        throw new Error('Failed to fetch parties');
       }
       
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (worldId) {
+        headers['x-world-id'] = worldId;
+      }
+      
+      const response = await fetch('/api/user/parties', { headers });
       const data = await response.json();
+      
       setParties(data.parties || []);
+      setError(null);
     } catch (err) {
       setError('Failed to load parties');
       console.error(err);
@@ -61,6 +70,15 @@ export default function MyPartiesPage() {
       day: 'numeric',
       year: 'numeric'
     });
+  };
+
+  const handleSignOut = () => {
+    ClientAuth.logout();
+  };
+
+  const isLoggedIn = () => {
+    // Check both new and old auth systems
+    return ClientAuth.isLoggedIn() || localStorage.getItem('world_id') !== null;
   };
 
   if (isLoading) {
@@ -96,12 +114,21 @@ export default function MyPartiesPage() {
               </button>
             </nav>
           </div>
-          <button
-            onClick={() => ClientAuth.logout()}
-            className="text-gray-400 hover:text-white transition"
-          >
-            Sign Out
-          </button>
+          {isLoggedIn() ? (
+            <button
+              onClick={handleSignOut}
+              className="text-gray-400 hover:text-white transition"
+            >
+              Sign Out
+            </button>
+          ) : (
+            <button
+              onClick={() => router.push('/signin')}
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition"
+            >
+              Sign In
+            </button>
+          )}
         </div>
       </div>
 

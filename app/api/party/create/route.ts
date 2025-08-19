@@ -1,5 +1,5 @@
 // app/api/party/create/route.ts
-// Create a new party
+// Create a new party with fallback to old system
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -15,8 +15,37 @@ function generatePartyCode(): string {
 
 export async function POST(request: NextRequest) {
   try {
-    // Get user ID from cookie
-    const userId = request.cookies.get('tootfm_uid')?.value;
+    const body = await request.json();
+    const { name, description, userId: bodyUserId } = body;
+
+    // Try multiple ways to get user ID
+    let userId = request.cookies.get('tootfm_uid')?.value || bodyUserId;
+    
+    // If no userId, try to find by World ID
+    if (!userId && body.worldId) {
+      const user = await prisma.user.findUnique({
+        where: { worldId: body.worldId },
+        select: { id: true }
+      });
+      
+      if (user) {
+        userId = user.id;
+      }
+    }
+    
+    // If still no user, create a temporary one from World ID
+    if (!userId && body.worldId) {
+      const newUser = await prisma.user.create({
+        data: {
+          worldId: body.worldId,
+          primaryId: `usr_${Date.now().toString(36)}${Math.random().toString(36).substring(2, 8)}`,
+          displayName: 'Party Host',
+          level: 'guest',
+          verified: true
+        }
+      });
+      userId = newUser.id;
+    }
     
     if (!userId) {
       return NextResponse.json(
@@ -24,9 +53,6 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
-
-    const body = await request.json();
-    const { name, description } = body;
 
     if (!name || name.trim().length === 0) {
       return NextResponse.json(

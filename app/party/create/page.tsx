@@ -12,13 +12,6 @@ export default function CreatePartyPage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    // Check if user is logged in
-    if (!ClientAuth.isLoggedIn()) {
-      router.push('/signin');
-    }
-  }, []);
-
   const createParty = async () => {
     if (!partyName.trim()) {
       setError('Please enter a party name');
@@ -29,21 +22,30 @@ export default function CreatePartyPage() {
     setError('');
 
     try {
+      // Get user data from localStorage (old system)
+      const userData = localStorage.getItem('user_data');
+      let worldId = null;
+      
+      if (userData) {
+        try {
+          const parsed = JSON.parse(userData);
+          worldId = parsed.worldId;
+        } catch (e) {
+          console.error('Error parsing user data:', e);
+        }
+      }
+
       const response = await fetch('/api/party/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: partyName.trim(),
-          description: description.trim()
+          description: description.trim(),
+          worldId: worldId
         })
       });
 
       const data = await response.json();
-
-      if (response.status === 401) {
-        router.push('/signin');
-        return;
-      }
 
       if (data.success && data.party) {
         // Redirect to party page
