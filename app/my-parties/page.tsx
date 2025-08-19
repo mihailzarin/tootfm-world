@@ -29,7 +29,6 @@ export default function MyPartiesPage() {
 
   const fetchParties = async () => {
     try {
-      // Get World ID from localStorage for backward compatibility
       const userData = localStorage.getItem('user_data');
       let worldId = null;
       
@@ -77,7 +76,6 @@ export default function MyPartiesPage() {
   };
 
   const isLoggedIn = () => {
-    // Check both new and old auth systems
     return ClientAuth.isLoggedIn() || localStorage.getItem('world_id') !== null;
   };
 
@@ -100,18 +98,14 @@ export default function MyPartiesPage() {
               <span className="font-bold text-xl">tootFM</span>
             </button>
             <nav className="hidden md:flex items-center gap-6">
-              <button 
-                onClick={() => router.push('/my-parties')}
-                className="text-white font-medium"
-              >
-                My Parties
-              </button>
-              <button 
-                onClick={() => router.push('/profile')}
-                className="text-gray-400 hover:text-white transition"
+              <span className="text-white font-medium">My Parties</span>
+              <a 
+                href="/profile"
+                onClick={(e) => { e.preventDefault(); router.push('/profile'); }}
+                className="text-gray-400 hover:text-white transition cursor-pointer"
               >
                 Profile
-              </button>
+              </a>
             </nav>
           </div>
           {isLoggedIn() ? (
@@ -134,7 +128,6 @@ export default function MyPartiesPage() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-12">
-        {/* Page Title */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-4xl font-bold mb-2">My Parties</h1>

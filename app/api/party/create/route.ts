@@ -1,14 +1,12 @@
-// app/api/party/create/route.ts
-// Create a new party with fallback to old system
-
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+// Генерация уникального 6-символьного кода
 function generatePartyCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
   for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return code;
 }
@@ -16,52 +14,71 @@ function generatePartyCode(): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, userId: bodyUserId } = body;
+    const { name, description, isPublic = false } = body;
 
-    // Try multiple ways to get user ID
-    let userId = request.cookies.get('tootfm_uid')?.value || bodyUserId;
+    console.log('🎵 Creating party:', { name, isPublic });
+
+    // Получаем user ID разными способами
+    let userId = request.cookies.get('tootfm_uid')?.value;
+    let worldId = null;
     
-    // If no userId, try to find by World ID
-    if (!userId && body.worldId) {
+    // Пробуем получить World ID из headers
+    worldId = request.headers.get('x-world-id');
+    
+    // Если нет World ID в headers, ищем в cookies/localStorage через body
+    if (!worldId && body.worldId) {
+      worldId = body.worldId;
+    }
+
+    // Если есть World ID, находим или создаём пользователя
+    if (worldId) {
       const user = await prisma.user.findUnique({
-        where: { worldId: body.worldId },
+        where: { worldId },
         select: { id: true }
       });
       
-      if (user) {
+      if (!user) {
+        // Создаём нового пользователя
+        console.log('Creating new user with World ID:', worldId);
+        const newUser = await prisma.user.create({
+          data: { 
+            worldId,
+            displayName: `User ${worldId.substring(0, 8)}`
+          }
+        });
+        userId = newUser.id;
+      } else {
         userId = user.id;
       }
     }
-    
-    // If still no user, create a temporary one from World ID
-    if (!userId && body.worldId) {
-      const newUser = await prisma.user.create({
+
+    // Если всё ещё нет userId, создаём временного пользователя
+    if (!userId) {
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const tempUser = await prisma.user.create({
         data: {
-          worldId: body.worldId,
-          primaryId: `usr_${Date.now().toString(36)}${Math.random().toString(36).substring(2, 8)}`,
-          displayName: 'Party Host',
-          level: 'guest',
-          verified: true
+          worldId: tempId,
+          displayName: 'Guest User'
         }
       });
-      userId = newUser.id;
-    }
-    
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
-      );
+      userId = tempUser.id;
+      
+      // Сохраняем в cookie для последующих запросов
+      const response = NextResponse.json({
+        error: 'Please sign in to create a party'
+      }, { status: 401 });
+      
+      response.cookies.set('tootfm_uid', userId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 30 // 30 дней
+      });
+      
+      return response;
     }
 
-    if (!name || name.trim().length === 0) {
-      return NextResponse.json(
-        { error: 'Party name is required' },
-        { status: 400 }
-      );
-    }
-
-    // Generate unique code
+    // Генерируем уникальный код
     let code = generatePartyCode();
     let attempts = 0;
     
@@ -76,27 +93,75 @@ export async function POST(request: NextRequest) {
       attempts++;
     }
 
-    // Create party
+    // Создаём party
     const party = await prisma.party.create({
       data: {
         code,
-        name: name.trim(),
-        description: description?.trim(),
-        creatorId: userId
+        name: name || `Party ${code}`,
+        description: description || '',
+        isPublic,
+        creatorId: userId,
+        currentTrackId: null
+      },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            worldId: true,
+            displayName: true
+          }
+        },
+        _count: {
+          select: {
+            members: true,
+            tracks: true
+          }
+        }
       }
     });
 
-    console.log('✅ Party created:', party.code, party.name);
+    console.log('✅ Party created successfully:', party.code);
 
-    return NextResponse.json({
+    // Возвращаем успешный ответ
+    const response = NextResponse.json({
       success: true,
-      party
+      party: {
+        id: party.id,
+        code: party.code,
+        name: party.name,
+        description: party.description,
+        createdAt: party.createdAt,
+        memberCount: party._count.members,
+        trackCount: party._count.tracks,
+        creator: party.creator
+      }
     });
-    
+
+    // Сохраняем последний код party в cookie
+    response.cookies.set('last_party_code', party.code, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7 // 7 дней
+    });
+
+    return response;
+
   } catch (error) {
-    console.error('Error creating party:', error);
+    console.error('❌ Error creating party:', error);
+    
+    // Проверяем специфичные ошибки Prisma
+    if (error instanceof Error) {
+      if (error.message.includes('P2002')) {
+        return NextResponse.json(
+          { error: 'Party code already exists. Please try again.' },
+          { status: 409 }
+        );
+      }
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to create party' },
+      { error: 'Failed to create party. Please try again.' },
       { status: 500 }
     );
   }

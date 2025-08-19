@@ -12,15 +12,26 @@ export default function HomePage() {
   const [showWorldId, setShowWorldId] = useState(false);
 
   useEffect(() => {
-    // Check if user is logged in
-    setIsLoggedIn(ClientAuth.isLoggedIn());
+    // Check both auth systems
+    const hasWorldId = localStorage.getItem('world_id');
+    const hasSpotify = document.cookie.includes('spotify_user');
+    setIsLoggedIn(!!hasWorldId || !!hasSpotify || ClientAuth.isLoggedIn());
     
-    // Check if World ID login was requested
     const params = new URLSearchParams(window.location.search);
     if (params.get('worldid') === 'true') {
       setShowWorldId(true);
     }
   }, []);
+
+  const handleProfileClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    router.push('/profile');
+  };
+
+  const handleMyPartiesClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    router.push('/my-parties');
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 via-black to-purple-900">
@@ -34,20 +45,25 @@ export default function HomePage() {
           <nav className="flex items-center gap-4">
             {isLoggedIn ? (
               <>
-                <button
-                  onClick={() => router.push('/my-parties')}
-                  className="text-gray-300 hover:text-white transition"
+                
+                  href="/my-parties"
+                  onClick={handleMyPartiesClick}
+                  className="text-gray-300 hover:text-white transition cursor-pointer"
                 >
                   My Parties
-                </button>
-                <button
-                  onClick={() => router.push('/profile')}
-                  className="text-gray-300 hover:text-white transition"
+                </a>
+                
+                  href="/profile"
+                  onClick={handleProfileClick}
+                  className="text-gray-300 hover:text-white transition cursor-pointer"
                 >
                   Profile
-                </button>
+                </a>
                 <button
-                  onClick={() => ClientAuth.logout()}
+                  onClick={() => {
+                    ClientAuth.logout();
+                    setIsLoggedIn(false);
+                  }}
                   className="text-gray-400 hover:text-white transition"
                 >
                   Sign Out
@@ -77,10 +93,9 @@ export default function HomePage() {
           </h1>
           <p className="text-xl text-gray-300 mb-12 max-w-2xl mx-auto">
             Create parties where everyone gets one vote per track. 
-            No bots, no manipulation - just pure democratic playlists powered by World ID.
+            No bots, no manipulation - just pure democratic playlists.
           </p>
 
-          {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             {isLoggedIn ? (
               <>
