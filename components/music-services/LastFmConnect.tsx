@@ -1,6 +1,3 @@
-// components/music-services/LastFmConnect.tsx
-// Компонент для подключения Last.fm с улучшенным UI и обработкой ошибок
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -17,222 +14,151 @@ export default function LastFmConnect({ onConnect, onDisconnect }: LastFmConnect
   const [username, setUsername] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Проверяем статус подключения при загрузке
   useEffect(() => {
     checkConnectionStatus();
-    
-    // Проверяем параметры URL на предмет успешного подключения или ошибки
     const params = new URLSearchParams(window.location.search);
     if (params.get('lastfm') === 'connected') {
       checkConnectionStatus();
-      // Очищаем параметры URL
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (params.get('error') === 'lastfm_connection_failed') {
-      setError('Не удалось подключить Last.fm. Попробуйте еще раз.');
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
 
-  /**
-   * Проверяет статус подключения Last.fm
-   */
-  const checkConnectionStatus = () => {
-    // Проверяем наличие username в cookies (можно читать на клиенте)
-    const cookies = document.cookie.split(';');
-    const usernameCookie = cookies.find(c => c.trim().startsWith('lastfm_username='));
-    const userDataCookie = cookies.find(c => c.trim().startsWith('lastfm_user='));
-    
-    if (usernameCookie) {
-      const cookieUsername = decodeURIComponent(usernameCookie.split('=')[1]);
-      setIsConnected(true);
-      setUsername(cookieUsername);
-      setError(null);
-      
-      if (onConnect) {
-        onConnect(cookieUsername);
-      }
-    } else if (userDataCookie) {
-      // Пробуем получить из lastfm_user cookie
-      try {
-        const userData = JSON.parse(decodeURIComponent(userDataCookie.split('=')[1]));
-        if (userData.username) {
-          setIsConnected(true);
-          setUsername(userData.username);
-          setError(null);
-          
-          if (onConnect) {
-            onConnect(userData.username);
-          }
-        }
-      } catch (e) {
-        console.error('Error parsing lastfm_user cookie:', e);
-      }
-    } else {
-      setIsConnected(false);
-      setUsername(null);
-    }
-  };
-
-  /**
-   * Начинает процесс подключения Last.fm
-   */
-  const handleConnect = async () => {
-    setIsLoading(true);
-    setError(null);
-    
+  const checkConnectionStatus = async () => {
     try {
-      // Редиректим на endpoint авторизации
-      window.location.href = '/api/music/lastfm/connect';
-    } catch (error) {
-      console.error('Error connecting Last.fm:', error);
-      setError('Не удалось начать авторизацию');
-      setIsLoading(false);
+      const usernameFromCookie = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('lastfm_username='));
+      
+      if (usernameFromCookie) {
+        const user = usernameFromCookie.split('=')[1];
+        setUsername(user);
+        setIsConnected(true);
+        if (onConnect) onConnect(user);
+      }
+    } catch (err) {
+      console.error('Error checking Last.fm status:', err);
     }
   };
 
-  /**
-   * Отключает Last.fm
-   */
+  const handleConnect = () => {
+    setIsLoading(true);
+    window.location.href = '/api/music/lastfm/connect';
+  };
+
   const handleDisconnect = async () => {
-    setIsLoading(true);
-    setError(null);
-    
     try {
-      const response = await fetch('/api/music/lastfm/connect', {
-        method: 'DELETE',
+      setIsLoading(true);
+      const response = await fetch('/api/music/lastfm/disconnect', {
+        method: 'POST'
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to disconnect');
+
+      if (response.ok) {
+        setIsConnected(false);
+        setUsername(null);
+        if (onDisconnect) onDisconnect();
+        
+        // Clear cookies
+        document.cookie = 'lastfm_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        document.cookie = 'lastfm_username=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
       }
-      
-      setIsConnected(false);
-      setUsername(null);
-      
-      // Удаляем cookies на клиенте тоже
-      document.cookie = 'lastfm_username=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-      
-      if (onDisconnect) {
-        onDisconnect();
-      }
-    } catch (error) {
-      console.error('Error disconnecting Last.fm:', error);
-      setError('Не удалось отключить Last.fm');
+    } catch (err) {
+      setError('Failed to disconnect');
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <div className="bg-gradient-to-br from-red-900/20 to-red-800/20 rounded-xl p-6 backdrop-blur-sm border border-red-500/20">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <div className="bg-red-600 p-3 rounded-full">
-            <Radio className="h-6 w-6 text-white" />
+  if (isConnected && username) {
+    return (
+      <div className="bg-white/5 backdrop-blur rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center">
+              <Radio className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-medium">Last.fm</h3>
+              <p className="text-green-400 text-sm flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" />
+                Connected
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-xl font-bold text-white">Last.fm</h3>
-            <p className="text-gray-400 text-sm">Скробблинг и музыкальная статистика</p>
-          </div>
+          <button
+            onClick={handleDisconnect}
+            disabled={isLoading}
+            className="text-gray-400 hover:text-red-400 transition text-sm"
+          >
+            Disconnect
+          </button>
         </div>
         
-        {isConnected && (
-          <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
+        <div className="bg-black/20 rounded-lg p-3">
+          <p className="text-gray-400 text-xs mb-1">Username</p>
+          <p className="text-white font-medium">{username}</p>
+        </div>
+
+        {error && (
+          <p className="text-red-400 text-sm mt-3">{error}</p>
         )}
       </div>
+    );
+  }
 
-      {/* Статус подключения */}
-      {isConnected && username && (
-        <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-          <p className="text-green-400 text-sm flex items-center">
-            <CheckCircle className="h-4 w-4 mr-2" />
-            Подключено как <span className="font-bold ml-1">{username}</span>
-          </p>
+  return (
+    <div className="bg-white/5 backdrop-blur rounded-xl p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center">
+          <Radio className="w-5 h-5 text-white" />
         </div>
-      )}
+        <div>
+          <h3 className="text-white font-medium">Last.fm</h3>
+          <p className="text-gray-400 text-sm">Track your music history</p>
+        </div>
+      </div>
 
-      {/* Ошибка */}
+      <div className="space-y-2 mb-4 text-sm text-gray-300">
+        <p className="font-medium">With Last.fm you get:</p>
+        <ul className="space-y-1 text-gray-400">
+          <li className="flex items-center gap-2">
+            <span className="text-purple-400">•</span>
+            Automatic track scrobbling
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="text-purple-400">•</span>
+            Detailed listening statistics
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="text-purple-400">•</span>
+            Music recommendations
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="text-purple-400">•</span>
+            Complete listening history
+          </li>
+        </ul>
+      </div>
+
+      <button
+        onClick={handleConnect}
+        disabled={isLoading}
+        className="w-full bg-red-600 hover:bg-red-500 disabled:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2"
+      >
+        {isLoading ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Connecting...
+          </>
+        ) : (
+          <>
+            <Music className="w-4 h-4" />
+            Connect Last.fm
+          </>
+        )}
+      </button>
+
       {error && (
-        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-          <p className="text-red-400 text-sm flex items-center">
-            <XCircle className="h-4 w-4 mr-2" />
-            {error}
-          </p>
-        </div>
-      )}
-
-      {/* Возможности Last.fm */}
-      {!isConnected && (
-        <div className="mb-4 space-y-2">
-          <p className="text-gray-300 text-sm">С Last.fm вы получите:</p>
-          <ul className="space-y-1 text-gray-400 text-sm">
-            <li className="flex items-center">
-              <span className="text-red-500 mr-2">•</span>
-              Автоматический скробблинг треков
-            </li>
-            <li className="flex items-center">
-              <span className="text-red-500 mr-2">•</span>
-              Детальная статистика прослушиваний
-            </li>
-            <li className="flex items-center">
-              <span className="text-red-500 mr-2">•</span>
-              Музыкальные рекомендации
-            </li>
-            <li className="flex items-center">
-              <span className="text-red-500 mr-2">•</span>
-              История всех вечеринок
-            </li>
-          </ul>
-        </div>
-      )}
-
-      {/* Кнопка действия */}
-      {isConnected ? (
-        <button
-          onClick={handleDisconnect}
-          disabled={isLoading}
-          className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-              Отключение...
-            </>
-          ) : (
-            <>
-              <XCircle className="h-5 w-5 mr-2" />
-              Отключить Last.fm
-            </>
-          )}
-        </button>
-      ) : (
-        <button
-          onClick={handleConnect}
-          disabled={isLoading}
-          className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-medium py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transform hover:scale-105"
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-              Подключение...
-            </>
-          ) : (
-            <>
-              <Music className="h-5 w-5 mr-2" />
-              Подключить Last.fm
-            </>
-          )}
-        </button>
-      )}
-
-      {/* Дополнительная информация */}
-      {isConnected && (
-        <div className="mt-4 pt-4 border-t border-gray-700">
-          <p className="text-gray-400 text-xs">
-            Last.fm будет автоматически записывать все треки, 
-            которые играют на вечеринках tootFM
-          </p>
-        </div>
+        <p className="text-red-400 text-sm mt-3">{error}</p>
       )}
     </div>
   );
