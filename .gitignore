@@ -42,3 +42,4 @@ keys/
 *.p8
 keys/
 *.p8
+.env
