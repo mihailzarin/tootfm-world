@@ -23,16 +23,6 @@ export default function HomePage() {
     }
   }, []);
 
-  const handleProfileClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    router.push('/profile');
-  };
-
-  const handleMyPartiesClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    router.push('/my-parties');
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 via-black to-purple-900">
       {/* Header */}
@@ -45,20 +35,18 @@ export default function HomePage() {
           <nav className="flex items-center gap-4">
             {isLoggedIn ? (
               <>
-                
-                  href="/my-parties"
-                  onClick={handleMyPartiesClick}
-                  className="text-gray-300 hover:text-white transition cursor-pointer"
+                <button
+                  onClick={() => router.push('/my-parties')}
+                  className="text-gray-300 hover:text-white transition"
                 >
                   My Parties
-                </a>
-                
-                  href="/profile"
-                  onClick={handleProfileClick}
-                  className="text-gray-300 hover:text-white transition cursor-pointer"
+                </button>
+                <button
+                  onClick={() => router.push('/profile')}
+                  className="text-gray-300 hover:text-white transition"
                 >
                   Profile
-                </a>
+                </button>
                 <button
                   onClick={() => {
                     ClientAuth.logout();
