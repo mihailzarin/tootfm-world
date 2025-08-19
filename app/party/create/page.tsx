@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Music, Users, Settings, ArrowRight, Loader2 } from 'lucide-react';
+import { Music, Users, Settings, ArrowRight, Loader2, ArrowLeft } from 'lucide-react';
+import { ClientAuth } from '@/lib/auth/client-auth';
 
 export default function CreatePartyPage() {
   const router = useRouter();
@@ -10,6 +11,13 @@ export default function CreatePartyPage() {
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    // Check if user is logged in
+    if (!ClientAuth.isLoggedIn()) {
+      router.push('/signin');
+    }
+  }, []);
 
   const createParty = async () => {
     if (!partyName.trim()) {
@@ -21,27 +29,21 @@ export default function CreatePartyPage() {
     setError('');
 
     try {
-      // Get user data from localStorage
-      const userData = localStorage.getItem('user_data');
-      if (!userData) {
-        router.push('/');
-        return;
-      }
-
-      const user = JSON.parse(userData);
-      const userId = user.worldId || user.nullifier_hash || user.id;
-
       const response = await fetch('/api/party/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: partyName.trim(),
-          description: description.trim(),
-          userId: userId
+          description: description.trim()
         })
       });
 
       const data = await response.json();
+
+      if (response.status === 401) {
+        router.push('/signin');
+        return;
+      }
 
       if (data.success && data.party) {
         // Redirect to party page
@@ -59,6 +61,26 @@ export default function CreatePartyPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black text-white">
+      {/* Header */}
+      <div className="border-b border-white/10 bg-black/20 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-8">
+            <button onClick={() => router.push('/')} className="flex items-center gap-2">
+              <Music className="w-6 h-6 text-purple-400" />
+              <span className="font-bold text-xl">tootFM</span>
+            </button>
+          </div>
+          <button
+            onClick={() => router.push('/my-parties')}
+            className="text-gray-400 hover:text-white transition flex items-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to My Parties
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
       <div className="max-w-2xl mx-auto p-6 pt-20">
         {/* Header */}
         <div className="text-center mb-12">
@@ -66,7 +88,7 @@ export default function CreatePartyPage() {
             <Music className="w-10 h-10" />
           </div>
           <h1 className="text-4xl font-bold mb-2">Create a Party</h1>
-          <p className="text-gray-400">Start a democratic music session with World ID verification</p>
+          <p className="text-gray-400">Start a democratic music session</p>
         </div>
 
         {/* Form */}
@@ -100,7 +122,7 @@ export default function CreatePartyPage() {
           <div className="space-y-4 mb-8">
             <div className="flex items-center gap-3 text-gray-300">
               <Users className="w-5 h-5 text-purple-400" />
-              <span>Sybil-resistant voting with World ID</span>
+              <span>Democratic voting - one person, one vote</span>
             </div>
             <div className="flex items-center gap-3 text-gray-300">
               <Music className="w-5 h-5 text-purple-400" />
@@ -108,7 +130,7 @@ export default function CreatePartyPage() {
             </div>
             <div className="flex items-center gap-3 text-gray-300">
               <Settings className="w-5 h-5 text-purple-400" />
-              <span>Real-time democratic playlist</span>
+              <span>Real-time collaborative playlist</span>
             </div>
           </div>
 
@@ -140,16 +162,6 @@ export default function CreatePartyPage() {
                 <ArrowRight className="w-5 h-5" />
               </>
             )}
-          </button>
-        </div>
-
-        {/* Back Button */}
-        <div className="text-center mt-8">
-          <button
-            onClick={() => router.push('/profile')}
-            className="text-gray-400 hover:text-white transition-colors"
-          >
-            Back to Profile
           </button>
         </div>
       </div>

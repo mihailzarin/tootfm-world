@@ -9,14 +9,11 @@ datasource db {
 
 model User {
   id             String         @id @default(cuid())
-  worldId        String         @unique // Оставляем как было
-  primaryId      String?        @unique @default(cuid()) // NEW: Добавляем как опциональное
+  worldId        String         @unique
   credentialType String?
   verified       Boolean        @default(true)
   displayName    String?
   avatar         String?
-  email          String? // NEW: Добавляем email
-  level          String?        @default("guest") // NEW: Добавляем level
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   musicProfile   MusicProfile?
@@ -26,9 +23,6 @@ model User {
   addedTracks    Track[]        @relation("TrackAdder")
   syncHistory    SyncHistory[]
   votes          Vote[]
-
-  @@index([primaryId])
-  @@index([email])
 }
 
 model Party {
@@ -100,10 +94,10 @@ model MusicService {
   id              String      @id @default(dbgenerated("gen_random_uuid()"))
   userId          String
   service         ServiceType
-  accessToken     String?     @db.Text
-  refreshToken    String?     @db.Text
+  accessToken     String?
+  refreshToken    String?
   expiresAt       DateTime?
-  serviceUserId   String? // ID пользователя в сервисе
+  serviceUserId   String?
   serviceUserName String?
   serviceEmail    String?
   connectedAt     DateTime    @default(now())
@@ -116,10 +110,8 @@ model MusicService {
   user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, service])
-  @@unique([service, serviceUserId]) // NEW: Для поиска по Spotify ID
   @@index([userId])
   @@index([service])
-  @@index([serviceUserId]) // NEW: Индекс для быстрого поиска
 }
 
 model MusicProfile {

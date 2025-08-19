@@ -28,6 +28,9 @@ export default function WorldIDButton() {
         localStorage.setItem("world_id", result.nullifier_hash);
         localStorage.setItem("user_data", JSON.stringify(data.user));
         
+        // Сохраняем user ID для новой системы
+        localStorage.setItem("tootfm_user_id", data.user.id || result.nullifier_hash);
+        
         // Переходим на страницу профиля
         router.push("/profile");
       } else {
@@ -50,12 +53,15 @@ export default function WorldIDButton() {
       signal="login_to_tootfm"
       credential_types={["orb", "phone"]}
       enableTelemetry
+      // Добавляем title для accessibility
+      verification_level="orb"
     >
       {({ open }) => (
         <button
           onClick={open}
           disabled={isLoading}
           className="bg-white/20 backdrop-blur-lg hover:bg-white/30 text-white font-bold py-4 px-8 rounded-full transition-all duration-300 flex items-center gap-3 shadow-xl hover:shadow-2xl hover:scale-105"
+          aria-label="Sign in with World ID"
         >
           <span className="text-2xl">🌐</span>
           {isLoading ? "Verifying..." : "Sign in with World ID"}
