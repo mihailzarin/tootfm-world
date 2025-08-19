@@ -174,7 +174,6 @@ export default function ProfileClient() {
 
       console.log("Loading music profile for:", userId);
 
-      // IMPORTANT: Include Apple Music data
       const requestBody: any = { userId };
 
       const appleLibrary = localStorage.getItem('apple_music_library');
@@ -615,6 +614,17 @@ export default function ProfileClient() {
           {activeTab === 'stats' && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-4">Statistics</h2>
+              
+              {/* CREATE PARTY BUTTON */}
+              <div className="mb-6 text-center">
+                <button
+                  onClick={() => router.push('/party/create')}
+                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 text-white px-8 py-3 rounded-full font-bold transition-all inline-flex items-center gap-2"
+                >
+                  <span className="text-xl">🎉</span>
+                  Create Party
+                </button>
+              </div>
               
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-black/30 rounded-xl p-4">

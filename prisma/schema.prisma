@@ -20,6 +20,7 @@ model User {
   musicServices  MusicService[]
   createdParties Party[]        @relation("PartyCreator")
   joinedParties  PartyMember[]
+  addedTracks    Track[]        @relation("TrackAdder")
   syncHistory    SyncHistory[]
   votes          Vote[]
 }
@@ -64,9 +65,11 @@ model Track {
   albumArt  String?
   duration  Int
   partyId   String
+  addedById String
   addedAt   DateTime @default(now())
   voteCount Int      @default(0)
   party     Party    @relation(fields: [partyId], references: [id])
+  addedBy   User     @relation("TrackAdder", fields: [addedById], references: [id])
   votes     Vote[]
 
   @@unique([spotifyId, partyId])
@@ -154,72 +157,6 @@ model SyncHistory {
 
   @@index([userId, service])
   @@index([startedAt])
-}
-
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model backup_party_20250117 {
-  id          String?
-  code        String?
-  name        String?
-  description String?
-  isActive    Boolean?
-  creatorId   String?
-  createdAt   DateTime?
-  updatedAt   DateTime?
-
-  @@ignore
-}
-
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model backup_partymember_20250117 {
-  id       String?
-  userId   String?
-  partyId  String?
-  role     String?
-  joinedAt DateTime?
-
-  @@ignore
-}
-
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model backup_track_20250117 {
-  id        String?
-  spotifyId String?
-  name      String?
-  artist    String?
-  album     String?
-  albumArt  String?
-  duration  Int?
-  partyId   String?
-  addedAt   DateTime?
-  voteCount Int?
-
-  @@ignore
-}
-
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model backup_user_20250117 {
-  id             String?
-  worldId        String?
-  credentialType String?
-  verified       Boolean?
-  displayName    String?
-  avatar         String?
-  createdAt      DateTime?
-  updatedAt      DateTime?
-
-  @@ignore
-}
-
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model backup_vote_20250117 {
-  id        String?
-  userId    String?
-  trackId   String?
-  value     Int?
-  createdAt DateTime?
-
-  @@ignore
 }
 
 enum ServiceType {
