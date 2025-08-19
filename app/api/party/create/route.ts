@@ -18,64 +18,55 @@ export async function POST(request: NextRequest) {
 
     console.log('🎵 Creating party:', { name, isPublic });
 
-    // Получаем user ID разными способами
+    // Пытаемся получить user ID разными способами
     let userId = request.cookies.get('tootfm_uid')?.value;
-    let worldId = null;
+    let worldId = body.worldId || request.headers.get('x-world-id');
     
-    // Пробуем получить World ID из headers
-    worldId = request.headers.get('x-world-id');
-    
-    // Если нет World ID в headers, ищем в cookies/localStorage через body
-    if (!worldId && body.worldId) {
-      worldId = body.worldId;
-    }
-
-    // Если есть World ID, находим или создаём пользователя
-    if (worldId) {
-      const user = await prisma.user.findUnique({
-        where: { worldId },
-        select: { id: true }
-      });
-      
-      if (!user) {
-        // Создаём нового пользователя
-        console.log('Creating new user with World ID:', worldId);
-        const newUser = await prisma.user.create({
-          data: { 
-            worldId,
-            displayName: `User ${worldId.substring(0, 8)}`
-          }
+    // Если есть World ID, находим пользователя
+    if (worldId && !userId) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { worldId },
+          select: { id: true }
         });
-        userId = newUser.id;
-      } else {
-        userId = user.id;
+        
+        if (user) {
+          userId = user.id;
+        }
+      } catch (e) {
+        console.log('User lookup failed:', e);
       }
     }
 
-    // Если всё ещё нет userId, создаём временного пользователя
+    // Если нет userId, создаём гостевого пользователя
     if (!userId) {
-      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const tempUser = await prisma.user.create({
-        data: {
-          worldId: tempId,
-          displayName: 'Guest User'
+      const guestId = `guest_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      try {
+        const guestUser = await prisma.user.create({
+          data: {
+            worldId: guestId,
+            displayName: 'Party Host'
+          }
+        });
+        userId = guestUser.id;
+        console.log('Created guest user:', userId);
+      } catch (e) {
+        console.error('Failed to create guest user:', e);
+        // Используем существующего гостя если есть
+        const existingGuest = await prisma.user.findFirst({
+          where: {
+            worldId: {
+              startsWith: 'guest_'
+            }
+          }
+        });
+        
+        if (existingGuest) {
+          userId = existingGuest.id;
+        } else {
+          throw new Error('Cannot create user');
         }
-      });
-      userId = tempUser.id;
-      
-      // Сохраняем в cookie для последующих запросов
-      const response = NextResponse.json({
-        error: 'Please sign in to create a party'
-      }, { status: 401 });
-      
-      response.cookies.set('tootfm_uid', userId, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 30 // 30 дней
-      });
-      
-      return response;
+      }
     }
 
     // Генерируем уникальный код
@@ -137,7 +128,17 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // Сохраняем последний код party в cookie
+    // Сохраняем userId в cookie если создали нового пользователя
+    if (userId && !request.cookies.get('tootfm_uid')) {
+      response.cookies.set('tootfm_uid', userId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 30 // 30 дней
+      });
+    }
+
+    // Сохраняем последний код party
     response.cookies.set('last_party_code', party.code, {
       httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
@@ -149,19 +150,11 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ Error creating party:', error);
-    
-    // Проверяем специфичные ошибки Prisma
-    if (error instanceof Error) {
-      if (error.message.includes('P2002')) {
-        return NextResponse.json(
-          { error: 'Party code already exists. Please try again.' },
-          { status: 409 }
-        );
-      }
-    }
-    
     return NextResponse.json(
-      { error: 'Failed to create party. Please try again.' },
+      { 
+        error: 'Failed to create party. Please try again.',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }

@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Music, Users, Zap, ArrowRight } from 'lucide-react';
 import WorldIDButton from '@/components/WorldIDButton';
-import { ClientAuth } from '@/lib/auth/client-auth';
 
 export default function HomePage() {
   const router = useRouter();
@@ -12,16 +11,36 @@ export default function HomePage() {
   const [showWorldId, setShowWorldId] = useState(false);
 
   useEffect(() => {
-    // Check both auth systems
+    // Check all auth systems
     const hasWorldId = localStorage.getItem('world_id');
     const hasSpotify = document.cookie.includes('spotify_user');
-    setIsLoggedIn(!!hasWorldId || !!hasSpotify || ClientAuth.isLoggedIn());
+    const hasUserId = document.cookie.includes('tootfm_uid');
+    
+    setIsLoggedIn(!!hasWorldId || !!hasSpotify || !!hasUserId);
     
     const params = new URLSearchParams(window.location.search);
     if (params.get('worldid') === 'true') {
       setShowWorldId(true);
     }
   }, []);
+
+  const handleSignOut = () => {
+    // Clear all auth data
+    localStorage.removeItem('world_id');
+    localStorage.removeItem('user_data');
+    localStorage.removeItem('music_profile_cache');
+    localStorage.removeItem('last_party_code');
+    
+    // Clear cookies
+    document.cookie.split(";").forEach((c) => {
+      document.cookie = c
+        .replace(/^ +/, "")
+        .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+    });
+    
+    setIsLoggedIn(false);
+    router.push('/');
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 via-black to-purple-900">
@@ -48,10 +67,7 @@ export default function HomePage() {
                   Profile
                 </button>
                 <button
-                  onClick={() => {
-                    ClientAuth.logout();
-                    setIsLoggedIn(false);
-                  }}
+                  onClick={handleSignOut}
                   className="text-gray-400 hover:text-white transition"
                 >
                   Sign Out
