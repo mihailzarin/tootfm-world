@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Music, User, ChevronLeft, LogOut, Loader2 } from 'lucide-react';
+import { Music, User, LogOut, Loader2 } from 'lucide-react';
 import SpotifyConnect from '@/components/SpotifyConnect';
 import LastFmConnect from '@/components/music-services/LastFmConnect';
+import MusicPortrait from '@/components/profile/MusicPortrait';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -56,16 +57,12 @@ export default function ProfilePage() {
   }, []);
 
   const handleSignOut = () => {
-    // Clear everything
     localStorage.clear();
-    
-    // Clear all cookies
     document.cookie.split(";").forEach((c) => {
       document.cookie = c
         .replace(/^ +/, "")
         .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
     });
-    
     router.push('/');
   };
 
@@ -138,6 +135,16 @@ export default function ProfilePage() {
               Music Services
             </button>
             <button
+              onClick={() => setActiveTab('portrait')}
+              className={`pb-3 px-1 transition ${
+                activeTab === 'portrait' 
+                  ? 'text-white border-b-2 border-purple-400' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Music Portrait
+            </button>
+            <button
               onClick={() => setActiveTab('stats')}
               className={`pb-3 px-1 transition ${
                 activeTab === 'stats' 
@@ -187,6 +194,10 @@ export default function ProfilePage() {
                 )}
               </div>
             </div>
+          )}
+
+          {activeTab === 'portrait' && (
+            <MusicPortrait userId={userData?.worldId || 'guest'} />
           )}
 
           {activeTab === 'stats' && (
