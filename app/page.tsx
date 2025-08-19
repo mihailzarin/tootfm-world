@@ -39,7 +39,7 @@ export default function Home() {
             </a>
             
             <a 
-              href="/create-session" 
+              href="/party/create" 
               className="group relative overflow-hidden px-6 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl hover:shadow-2xl transition-all transform hover:scale-105"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
