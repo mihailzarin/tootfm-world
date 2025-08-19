@@ -2,7 +2,7 @@
 // Updated Spotify callback with user creation/login
 
 import { NextRequest, NextResponse } from "next/server";
-import { findOrCreateUserByService } from "@/lib/auth/simple-auth";
+import { findOrCreateUserByService } from "@/lib/auth/server-auth";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
