@@ -1,39 +1,40 @@
-// app/api/music/analyze/route.ts
-// Универсальный анализ музыки из Spotify и Last.fm
-
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await request.json();
+    const body = await request.json();
+    const { userId, appleLibrary } = body; // Now accepting appleLibrary
+    
     console.log('🎵 Analyzing music for user:', userId);
+    console.log('🍎 Apple Music data included:', !!appleLibrary);
 
-    // Получаем все cookies
+    // Get all cookies
     const cookies = request.cookies;
     
-    // Проверяем подключенные сервисы
+    // Check connected services
     const spotifyToken = cookies.get('spotify_token')?.value;
     const lastfmUsername = cookies.get('lastfm_username')?.value;
     const lastfmSession = cookies.get('lastfm_session')?.value;
     
     console.log('📊 Connected services:', {
       spotify: !!spotifyToken,
-      lastfm: !!lastfmUsername
+      lastfm: !!lastfmUsername,
+      appleMusic: !!appleLibrary
     });
 
-    // Собираем данные из всех источников
+    // Collect data from all sources
     let allTracks: any[] = [];
     let allArtists: any[] = [];
     let allGenres: string[] = [];
     let audioFeatures: any = null;
     let sources: string[] = [];
 
-    // 1. ПОЛУЧАЕМ ДАННЫЕ ИЗ SPOTIFY
+    // 1. SPOTIFY DATA
     if (spotifyToken) {
       console.log('🎧 Fetching Spotify data...');
       
       try {
-        // Топ треки
+        // Top tracks
         const tracksResponse = await fetch('https://api.spotify.com/v1/me/top/tracks?limit=20&time_range=medium_term', {
           headers: { 'Authorization': `Bearer ${spotifyToken}` }
         });
@@ -42,16 +43,15 @@ export async function POST(request: NextRequest) {
           const tracksData = await tracksResponse.json();
           const spotifyTracks = tracksData.items || [];
           
-          // Добавляем источник к трекам
           spotifyTracks.forEach((track: any) => {
-            track.source = 'spotify';
+            track.source = 'Spotify';
             allTracks.push(track);
           });
           
           console.log(`✅ Got ${spotifyTracks.length} tracks from Spotify`);
         }
 
-        // Топ артисты
+        // Top artists
         const artistsResponse = await fetch('https://api.spotify.com/v1/me/top/artists?limit=10&time_range=medium_term', {
           headers: { 'Authorization': `Bearer ${spotifyToken}` }
         });
@@ -61,10 +61,10 @@ export async function POST(request: NextRequest) {
           const spotifyArtists = artistsData.items || [];
           
           spotifyArtists.forEach((artist: any) => {
-            artist.source = 'spotify';
+            artist.source = 'Spotify';
             allArtists.push(artist);
             
-            // Собираем жанры
+            // Collect genres
             if (artist.genres) {
               allGenres.push(...artist.genres);
             }
@@ -73,10 +73,10 @@ export async function POST(request: NextRequest) {
           console.log(`✅ Got ${spotifyArtists.length} artists from Spotify`);
         }
 
-        // Audio features для энергии
+        // Audio features for energy
         if (allTracks.length > 0) {
           const trackIds = allTracks
-            .filter(t => t.source === 'spotify')
+            .filter(t => t.source === 'Spotify')
             .slice(0, 10)
             .map(t => t.id)
             .join(',');
@@ -97,14 +97,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. ПОЛУЧАЕМ ДАННЫЕ ИЗ LAST.FM
+    // 2. LAST.FM DATA
     if (lastfmUsername) {
       console.log('📻 Fetching Last.fm data...');
       
       try {
         const apiKey = process.env.LASTFM_API_KEY!;
         
-        // Топ треки Last.fm
+        // Top tracks
         const topTracksUrl = `https://ws.audioscrobbler.com/2.0/?method=user.getTopTracks&user=${lastfmUsername}&api_key=${apiKey}&format=json&limit=20&period=6month`;
         const topTracksResponse = await fetch(topTracksUrl);
         
@@ -112,23 +112,22 @@ export async function POST(request: NextRequest) {
           const topTracksData = await topTracksResponse.json();
           const lastfmTracks = topTracksData.toptracks?.track || [];
           
-          // Преобразуем формат Last.fm в общий
           lastfmTracks.forEach((track: any) => {
             allTracks.push({
               name: track.name,
               artist: track.artist.name,
               album: { name: track.album?.['#text'] || 'Unknown Album' },
               playcount: parseInt(track.playcount) || 0,
-              source: 'lastfm',
+              source: 'Last.fm',
               url: track.url,
-              image: track.image?.[2]?.['#text'] // medium size
+              image: track.image?.[2]?.['#text']
             });
           });
           
           console.log(`✅ Got ${lastfmTracks.length} tracks from Last.fm`);
         }
 
-        // Топ артисты Last.fm
+        // Top artists
         const topArtistsUrl = `https://ws.audioscrobbler.com/2.0/?method=user.getTopArtists&user=${lastfmUsername}&api_key=${apiKey}&format=json&limit=10&period=6month`;
         const topArtistsResponse = await fetch(topArtistsUrl);
         
@@ -140,7 +139,7 @@ export async function POST(request: NextRequest) {
             allArtists.push({
               name: artist.name,
               playcount: parseInt(artist.playcount) || 0,
-              source: 'lastfm',
+              source: 'Last.fm',
               url: artist.url,
               image: artist.image?.[2]?.['#text']
             });
@@ -149,7 +148,7 @@ export async function POST(request: NextRequest) {
           console.log(`✅ Got ${lastfmArtists.length} artists from Last.fm`);
         }
 
-        // Получаем теги (жанры) пользователя
+        // User tags (genres)
         const topTagsUrl = `https://ws.audioscrobbler.com/2.0/?method=user.getTopTags&user=${lastfmUsername}&api_key=${apiKey}&format=json&limit=20`;
         const topTagsResponse = await fetch(topTagsUrl);
         
@@ -170,7 +169,49 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 3. АНАЛИЗИРУЕМ СОБРАННЫЕ ДАННЫЕ
+    // 3. APPLE MUSIC DATA
+    if (appleLibrary) {
+      console.log('🍎 Processing Apple Music data...');
+      
+      try {
+        // Process artists
+        if (appleLibrary.artists && Array.isArray(appleLibrary.artists)) {
+          appleLibrary.artists.forEach((artist: any) => {
+            allArtists.push({
+              name: artist.attributes?.name || artist.name || 'Unknown Artist',
+              playcount: 0,
+              source: 'Apple Music'
+            });
+          });
+          console.log(`✅ Got ${appleLibrary.artists.length} artists from Apple Music`);
+        }
+        
+        // Process songs
+        if (appleLibrary.songs && Array.isArray(appleLibrary.songs)) {
+          appleLibrary.songs.slice(0, 20).forEach((song: any) => {
+            allTracks.push({
+              name: song.attributes?.name || song.name || 'Unknown Track',
+              artist: song.attributes?.artistName || 'Unknown Artist',
+              album: { name: song.attributes?.albumName || 'Unknown Album' },
+              source: 'Apple Music'
+            });
+          });
+          console.log(`✅ Got ${Math.min(20, appleLibrary.songs.length)} tracks from Apple Music`);
+        }
+        
+        // Process genres
+        if (appleLibrary.genres && Array.isArray(appleLibrary.genres)) {
+          allGenres.push(...appleLibrary.genres);
+          console.log(`✅ Got ${appleLibrary.genres.length} genres from Apple Music`);
+        }
+        
+        sources.push('Apple Music');
+      } catch (error) {
+        console.error('❌ Error processing Apple Music data:', error);
+      }
+    }
+
+    // 4. ANALYZE COLLECTED DATA
     console.log('🔍 Analyzing collected data:', {
       tracks: allTracks.length,
       artists: allArtists.length,
@@ -178,7 +219,7 @@ export async function POST(request: NextRequest) {
       sources: sources
     });
 
-    // Если нет данных ни от одного сервиса, возвращаем демо
+    // If no data from any service, return demo
     if (allTracks.length === 0 && allArtists.length === 0) {
       console.log('⚠️ No data from services, returning demo profile');
       return NextResponse.json({
@@ -188,7 +229,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Обрабатываем и сортируем данные
+    // Process and sort data
     const uniqueGenres = processGenres(allGenres);
     const topTracks = processTopTracks(allTracks);
     const topArtists = processTopArtists(allArtists);
@@ -203,12 +244,9 @@ export async function POST(request: NextRequest) {
       diversityScore: Math.round(diversityScore),
       topArtists: topArtists.slice(0, 5),
       topTracks: topTracks.slice(0, 5),
-      stats: {
-        totalTracks: allTracks.length,
-        totalArtists: allArtists.length,
-        avgPopularity: calculateAveragePopularity(allTracks),
-        dataSources: sources
-      },
+      totalTracks: allTracks.length,
+      totalArtists: new Set(allArtists.map(a => a.name)).size,
+      totalGenres: uniqueGenres.length,
       sources
     };
 
@@ -236,7 +274,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// HELPER FUNCTIONS
 
 function processGenres(genres: string[]): string[] {
   const genreMap = new Map<string, number>();
@@ -250,9 +288,9 @@ function processGenres(genres: string[]): string[] {
     genreMap.set(normalized, (genreMap.get(normalized) || 0) + 1);
   });
   
-  // Если жанров мало, добавляем базовые
+  // Add basic genres if too few
   if (genreMap.size < 3) {
-    ['Pop', 'Rock', 'Electronic', 'Indie', 'Hip-Hop'].forEach(g => {
+    ['Pop', 'Rock', 'Electronic', 'Indie', 'Hip Hop'].forEach(g => {
       if (!genreMap.has(g)) {
         genreMap.set(g, 1);
       }
@@ -265,7 +303,6 @@ function processGenres(genres: string[]): string[] {
 }
 
 function processTopTracks(tracks: any[]): any[] {
-  // Убираем дубликаты и сортируем
   const trackMap = new Map();
   
   tracks.forEach(track => {
@@ -301,7 +338,7 @@ function processTopArtists(artists: any[]): any[] {
         source: artist.source
       });
     } else {
-      // Если артист из нескольких источников, суммируем популярность
+      // If artist from multiple sources, sum popularity
       const existing = artistMap.get(name);
       existing.popularity += artist.popularity || artist.playcount || 0;
     }
@@ -324,7 +361,7 @@ function calculateEnergy(audioFeatures: any, tracks: any[]): number {
     return (avgEnergy * 0.6 + avgDanceability * 0.4) * 100;
   }
   
-  // Если нет audio features, оцениваем по жанрам и популярности
+  // Default based on genre and popularity
   return 65 + Math.random() * 20;
 }
 
@@ -336,18 +373,8 @@ function calculateDiversity(genres: string[], artists: any[]): number {
   return genreDiversity + artistDiversity;
 }
 
-function calculateAveragePopularity(tracks: any[]): number {
-  if (tracks.length === 0) return 50;
-  
-  const totalPop = tracks.reduce((acc, track) => {
-    return acc + (track.popularity || track.playcount || 50);
-  }, 0);
-  
-  return Math.round(totalPop / tracks.length);
-}
-
 function generatePersonality(genres: string[], energy: number, diversity: number, sources: string[]): string {
-  const sourceEmoji = sources.length > 1 ? '🌐' : sources.includes('Spotify') ? '🎧' : '📻';
+  const sourceEmoji = sources.length > 2 ? '🌐' : sources.includes('Spotify') ? '🎧' : '📻';
   
   if (diversity > 80 && genres.length > 6) {
     return `Eclectic Explorer ${sourceEmoji}`;
@@ -370,7 +397,7 @@ function generatePersonality(genres: string[], energy: number, diversity: number
 
 function getDemoProfile() {
   return {
-    topGenres: ["Electronic", "Indie Rock", "Hip-Hop", "Pop", "Jazz"],
+    topGenres: ["Electronic", "Indie Rock", "Hip Hop", "Pop", "Jazz"],
     musicPersonality: "Music Explorer 🎵",
     energyLevel: 70,
     diversityScore: 75,
@@ -384,11 +411,9 @@ function getDemoProfile() {
       { name: "Karma Police", artist: "Radiohead", album: "OK Computer" },
       { name: "HUMBLE.", artist: "Kendrick Lamar", album: "DAMN." }
     ],
-    stats: {
-      totalTracks: 0,
-      totalArtists: 0,
-      avgPopularity: 0,
-      dataSources: []
-    }
+    totalTracks: 0,
+    totalArtists: 0,
+    totalGenres: 0,
+    sources: []
   };
 }

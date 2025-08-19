@@ -10,6 +10,7 @@ export default function ProfileClient() {
   const [userData, setUserData] = useState<Record<string, any> | null>(null);
   const [spotifyUser, setSpotifyUser] = useState<Record<string, any> | null>(null);
   const [lastfmUser, setLastfmUser] = useState<string | null>(null);
+  const [appleMusicConnected, setAppleMusicConnected] = useState(false);
   const [activeTab, setActiveTab] = useState('services');
   const [loading, setLoading] = useState(true);
   const [musicProfile, setMusicProfile] = useState<Record<string, any> | null>(null);
@@ -17,14 +18,14 @@ export default function ProfileClient() {
   const [lastfmData, setLastfmData] = useState<Record<string, any> | null>(null);
   const [connectingServices, setConnectingServices] = useState({
     spotify: false,
-    lastfm: false
+    lastfm: false,
+    appleMusic: false
   });
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
     try {
-      // Load user data from localStorage
       const stored = localStorage.getItem("user_data");
       
       if (!stored) {
@@ -36,40 +37,32 @@ export default function ProfileClient() {
       console.log("User data loaded:", data);
       setUserData(data);
 
-      // Check Spotify
       const spotifyStored = localStorage.getItem("spotify_user");
       if (spotifyStored) {
         try {
           const spotifyData = JSON.parse(spotifyStored);
           setSpotifyUser(spotifyData);
-          // Auto-load music profile if Spotify is connected
-          loadMusicProfile(data);
         } catch (e) {
           console.error("Error parsing Spotify data:", e);
         }
       }
 
-      // Check Last.fm from localStorage
       const lastfmStored = localStorage.getItem("lastfm_user");
       if (lastfmStored) {
         setLastfmUser(lastfmStored);
-        loadLastfmData();
       }
 
-      // Handle Spotify callback
+      const appleToken = localStorage.getItem("apple_music_token");
+      if (appleToken) {
+        setAppleMusicConnected(true);
+      }
+
       if (searchParams?.get("spotify") === "connected") {
         handleSpotifyCallback();
       }
-
-      // Handle Last.fm callback
-      const lastfmStatus = searchParams?.get("lastfm");
-      const lastfmUsername = searchParams?.get("username");
       
-      if (lastfmStatus === "connected") {
+      if (searchParams?.get("lastfm") === "connected") {
         handleLastfmCallback();
-      } else if (searchParams?.get("error") === "lastfm_failed") {
-        alert("Failed to connect Last.fm. Please try again.");
-        setConnectingServices(prev => ({ ...prev, lastfm: false }));
       }
 
     } catch (error) {
@@ -92,11 +85,6 @@ export default function ProfileClient() {
         localStorage.setItem("spotify_user", JSON.stringify(user));
         localStorage.setItem("spotify_connected", "true");
         setConnectingServices(prev => ({ ...prev, spotify: false }));
-        
-        // Load profile after connecting Spotify
-        if (userData) {
-          loadMusicProfile(userData);
-        }
       }
     } catch (error) {
       console.error("Error handling Spotify callback:", error);
@@ -106,9 +94,6 @@ export default function ProfileClient() {
 
   const handleLastfmCallback = () => {
     try {
-      console.log("Handling Last.fm callback...");
-      
-      // First check URL parameters
       const username = searchParams?.get("username");
       
       if (username) {
@@ -117,16 +102,9 @@ export default function ProfileClient() {
         localStorage.setItem("lastfm_user", username);
         localStorage.setItem("lastfm_connected", "true");
         setConnectingServices(prev => ({ ...prev, lastfm: false }));
-        
-        // Load Last.fm data
-        loadLastfmData();
-        
-        // Show success notification
-        console.log("Last.fm connected successfully:", username);
         return;
       }
       
-      // If no username in URL, check cookies
       const cookies = document.cookie.split(';');
       const lastfmUserCookie = cookies.find(c => c.trim().startsWith('lastfm_user='));
       
@@ -136,18 +114,10 @@ export default function ProfileClient() {
           const cookieData = JSON.parse(cookieValue);
           
           if (cookieData.username) {
-            console.log("Last.fm username from cookie:", cookieData.username);
             setLastfmUser(cookieData.username);
             localStorage.setItem("lastfm_user", cookieData.username);
             localStorage.setItem("lastfm_connected", "true");
-            
-            // Save additional data if available
-            if (cookieData.profile) {
-              localStorage.setItem("lastfm_profile", JSON.stringify(cookieData.profile));
-            }
-            
             setConnectingServices(prev => ({ ...prev, lastfm: false }));
-            loadLastfmData();
           }
         } catch (e) {
           console.error("Error parsing Last.fm cookie:", e);
@@ -204,17 +174,29 @@ export default function ProfileClient() {
 
       console.log("Loading music profile for:", userId);
 
+      // IMPORTANT: Include Apple Music data
+      const requestBody: any = { userId };
+
+      const appleLibrary = localStorage.getItem('apple_music_library');
+      if (appleLibrary) {
+        try {
+          requestBody.appleLibrary = JSON.parse(appleLibrary);
+          console.log("Including Apple Music data in analysis");
+        } catch (e) {
+          console.error("Error parsing Apple Music library:", e);
+        }
+      }
+
       const response = await fetch('/api/music/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId })
+        body: JSON.stringify(requestBody)
       });
 
       if (response.ok) {
         const result = await response.json();
         console.log("Music profile received:", result);
         
-        // Normalize profile data
         const normalizedProfile = {
           musicPersonality: result.profile?.musicPersonality || "Music Explorer",
           energyLevel: result.profile?.energyLevel || 70,
@@ -222,12 +204,17 @@ export default function ProfileClient() {
           topGenres: normalizeGenres(result.profile?.topGenres || []),
           topTracks: result.profile?.topTracks || [],
           topArtists: result.profile?.topArtists || [],
-          stats: result.profile?.stats || {}
+          totalTracks: result.profile?.totalTracks || 0,
+          totalArtists: result.profile?.totalArtists || 0,
+          totalGenres: result.profile?.totalGenres || 0,
+          sources: result.profile?.sources || []
         };
         
         setMusicProfile(normalizedProfile);
+        
+        localStorage.setItem('musicProfile', JSON.stringify(normalizedProfile));
+        localStorage.setItem('musicProfileTimestamp', Date.now().toString());
       } else {
-        // Fallback data
         setMusicProfile({
           topGenres: ["Pop", "Rock", "Electronic", "Hip-Hop", "Jazz"],
           musicPersonality: "Eclectic Explorer",
@@ -235,7 +222,10 @@ export default function ProfileClient() {
           diversityScore: 85,
           topTracks: [],
           topArtists: [],
-          stats: {}
+          totalTracks: 0,
+          totalArtists: 0,
+          totalGenres: 0,
+          sources: []
         });
       }
     } catch (error) {
@@ -247,42 +237,14 @@ export default function ProfileClient() {
         diversityScore: 80,
         topTracks: [],
         topArtists: [],
-        stats: {}
+        totalTracks: 0,
+        totalArtists: 0,
+        totalGenres: 0,
+        sources: []
       });
     } finally {
       setProfileLoading(false);
     }
-  };
-
-  const loadLastfmData = async () => {
-    try {
-      console.log("Loading Last.fm data...");
-      
-      const response = await fetch('/api/music/lastfm/top-tracks');
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log("Last.fm tracks received:", data);
-        setLastfmData(data);
-        
-        if (data.tracks && data.tracks.length > 0) {
-          updateProfileWithLastfmData(data);
-        }
-      } else {
-        console.error("Failed to load Last.fm data:", response.status);
-      }
-    } catch (error) {
-      console.error("Error loading Last.fm data:", error);
-    }
-  };
-
-  const updateProfileWithLastfmData = (lastfmData: any) => {
-    if (!musicProfile) return;
-    
-    setMusicProfile(prev => ({
-      ...prev,
-      lastfmTracks: lastfmData.tracks,
-    }));
   };
 
   const normalizeGenres = (genres: any[]): string[] => {
@@ -308,6 +270,19 @@ export default function ProfileClient() {
     router.push("/");
   };
 
+  const getUserId = () => {
+    const id = userData?.nullifier_hash || 
+               userData?.worldId || 
+               userData?.id || 
+               userData?.user_id ||
+               "User";
+    
+    if (typeof id === 'string' && id.length > 20) {
+      return id.substring(0, 10) + "..." + id.substring(id.length - 10);
+    }
+    return String(id);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
@@ -324,23 +299,9 @@ export default function ProfileClient() {
     );
   }
 
-  const getUserId = () => {
-    const id = userData?.nullifier_hash || 
-               userData?.worldId || 
-               userData?.id || 
-               userData?.user_id ||
-               "User";
-    
-    if (typeof id === 'string' && id.length > 20) {
-      return id.substring(0, 10) + "..." + id.substring(id.length - 10);
-    }
-    return String(id);
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black">
       <div className="max-w-4xl mx-auto p-6">
-        {/* HEADER */}
         <div className="bg-white/10 backdrop-blur rounded-3xl p-6 mb-6">
           <div className="flex justify-between items-center">
             <div>
@@ -358,7 +319,6 @@ export default function ProfileClient() {
           </div>
         </div>
 
-        {/* TABS */}
         <div className="flex gap-2 mb-6 justify-center flex-wrap">
           <button
             onClick={() => setActiveTab('services')}
@@ -373,7 +333,7 @@ export default function ProfileClient() {
           <button
             onClick={() => {
               setActiveTab('portrait');
-              if (!musicProfile && (spotifyUser || lastfmUser) && !profileLoading) {
+              if (!musicProfile && (spotifyUser || lastfmUser || appleMusicConnected) && !profileLoading) {
                 loadMusicProfile();
               }
             }}
@@ -397,14 +357,11 @@ export default function ProfileClient() {
           </button>
         </div>
 
-        {/* CONTENT */}
         <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
-          {/* SERVICES TAB */}
           {activeTab === 'services' && (
             <div className="space-y-4">
               <h2 className="text-2xl font-bold text-white mb-4">Music Services</h2>
               
-              {/* Spotify */}
               <div className="bg-gradient-to-r from-green-900/30 to-green-700/30 rounded-xl p-4 border border-green-500/20">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
@@ -444,7 +401,6 @@ export default function ProfileClient() {
                 </div>
               </div>
 
-              {/* Last.fm */}
               <div className="bg-gradient-to-r from-red-900/30 to-red-700/30 rounded-xl p-4 border border-red-500/20">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
@@ -484,10 +440,17 @@ export default function ProfileClient() {
                 </div>
               </div>
 
-              {/* Apple Music - NOW WORKING! */}
-              <AppleMusicConnect />
+              <AppleMusicConnect 
+                onConnectionChange={(connected) => {
+                  setAppleMusicConnected(connected);
+                  setConnectingServices(prev => ({ ...prev, appleMusic: false }));
+                  if (connected) {
+                    localStorage.removeItem('musicProfile');
+                    localStorage.removeItem('musicProfileTimestamp');
+                  }
+                }}
+              />
 
-              {/* YouTube Music */}
               <div className="bg-gradient-to-r from-orange-900/30 to-orange-700/30 rounded-xl p-4 border border-orange-500/20 opacity-60">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
@@ -510,12 +473,11 @@ export default function ProfileClient() {
             </div>
           )}
 
-          {/* MUSIC PORTRAIT TAB */}
           {activeTab === 'portrait' && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-4">Music Portrait</h2>
               
-              {!spotifyUser && !lastfmUser ? (
+              {!spotifyUser && !lastfmUser && !appleMusicConnected ? (
                 <div className="text-center py-8">
                   <div className="text-5xl mb-4">🎵</div>
                   <p className="text-gray-400 mb-4">Connect a music service to see your portrait</p>
@@ -533,15 +495,18 @@ export default function ProfileClient() {
                 </div>
               ) : musicProfile ? (
                 <div className="space-y-4">
-                  {/* Personality */}
                   <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-xl p-4 border border-purple-500/20">
                     <p className="text-gray-400 text-sm mb-1">Your Music Personality</p>
                     <p className="text-2xl font-bold text-white">
                       {musicProfile.musicPersonality || "Music Explorer"}
                     </p>
+                    {musicProfile.sources && musicProfile.sources.length > 0 && (
+                      <p className="text-gray-500 text-xs mt-2">
+                        Data from: {musicProfile.sources.join(', ')}
+                      </p>
+                    )}
                   </div>
 
-                  {/* Top Genres */}
                   <div className="bg-black/30 rounded-xl p-4">
                     <p className="text-gray-400 text-sm mb-3">Top Genres</p>
                     <div className="flex flex-wrap gap-2">
@@ -560,27 +525,26 @@ export default function ProfileClient() {
                     </div>
                   </div>
 
-                  {/* Top Tracks */}
                   {musicProfile.topTracks && musicProfile.topTracks.length > 0 && (
                     <div className="bg-black/30 rounded-xl p-4">
                       <p className="text-gray-400 text-sm mb-3">Recent Favorites</p>
                       <div className="space-y-2">
-                        {musicProfile.topTracks.slice(0, 3).map((track: any, i: number) => (
+                        {musicProfile.topTracks.slice(0, 5).map((track: any, i: number) => (
                           <div key={`track-${i}`} className="flex items-center gap-3">
-                            {track.image && (
-                              <img src={track.image} alt={track.name} className="w-10 h-10 rounded" />
-                            )}
+                            <span className="text-purple-400 text-sm w-4">{i+1}</span>
                             <div className="flex-1 min-w-0">
                               <p className="text-white text-sm font-medium truncate">{track.name}</p>
                               <p className="text-gray-400 text-xs truncate">{track.artist}</p>
                             </div>
+                            {track.source && (
+                              <span className="text-gray-600 text-xs">{track.source}</span>
+                            )}
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  {/* Stats */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-black/30 rounded-xl p-4">
                       <p className="text-gray-400 text-sm mb-2">Energy Level</p>
@@ -612,6 +576,27 @@ export default function ProfileClient() {
                       </div>
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-black/30 rounded-xl p-3 text-center">
+                      <p className="text-xl font-bold text-purple-400">
+                        {musicProfile.totalTracks || 0}
+                      </p>
+                      <p className="text-gray-400 text-xs">Tracks</p>
+                    </div>
+                    <div className="bg-black/30 rounded-xl p-3 text-center">
+                      <p className="text-xl font-bold text-pink-400">
+                        {musicProfile.totalArtists || 0}
+                      </p>
+                      <p className="text-gray-400 text-xs">Artists</p>
+                    </div>
+                    <div className="bg-black/30 rounded-xl p-3 text-center">
+                      <p className="text-xl font-bold text-blue-400">
+                        {musicProfile.totalGenres || 0}
+                      </p>
+                      <p className="text-gray-400 text-xs">Genres</p>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="text-center py-8">
@@ -627,17 +612,15 @@ export default function ProfileClient() {
             </div>
           )}
 
-          {/* STATISTICS TAB */}
           {activeTab === 'stats' && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-4">Statistics</h2>
               
-              {/* Connected Services Stats */}
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-black/30 rounded-xl p-4">
                   <p className="text-gray-400 text-sm mb-2">Connected Services</p>
                   <p className="text-3xl font-bold text-white">
-                    {(spotifyUser ? 1 : 0) + (lastfmUser ? 1 : 0)}
+                    {(spotifyUser ? 1 : 0) + (lastfmUser ? 1 : 0) + (appleMusicConnected ? 1 : 0)}
                   </p>
                 </div>
                 <div className="bg-black/30 rounded-xl p-4">
@@ -649,14 +632,16 @@ export default function ProfileClient() {
                     {lastfmUser && (
                       <span className="bg-red-600/20 text-red-300 px-2 py-1 rounded text-xs">Last.fm</span>
                     )}
-                    {!spotifyUser && !lastfmUser && (
+                    {appleMusicConnected && (
+                      <span className="bg-gray-600/20 text-gray-300 px-2 py-1 rounded text-xs">Apple Music</span>
+                    )}
+                    {!spotifyUser && !lastfmUser && !appleMusicConnected && (
                       <span className="text-gray-500 text-xs">None connected</span>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Party Stats */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-black/30 rounded-xl p-4 text-center">
                   <p className="text-2xl font-bold text-white">0</p>
@@ -679,7 +664,6 @@ export default function ProfileClient() {
           )}
         </div>
 
-        {/* BACK BUTTON */}
         <div className="text-center mt-6">
           <button
             onClick={() => router.push("/")}
