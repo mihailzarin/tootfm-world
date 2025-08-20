@@ -75,7 +75,10 @@ export async function POST(
     // 2. Собираем профили
     const profiles = [];
     
+    console.log("🔍 Creator:", party.creator?.id, "has profile:", !!party.creator?.musicProfile);
+    console.log("🔍 Members count:", party.members.length);
     if (party.creator?.musicProfile) {
+      console.log("📋 Creator profile topGenres:", party.creator.musicProfile.topGenres);
       profiles.push({
         userId: party.creator.id,
         profile: party.creator.musicProfile
