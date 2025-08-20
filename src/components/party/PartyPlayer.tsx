@@ -16,7 +16,7 @@ import {
   Shuffle,
   Repeat
 } from 'lucide-react';
-import { useSpotifyPlayer } from '@/hooks/useSpotifyPlayer';
+import { useSpotifyPlayer } from '@/src/hooks/useSpotifyPlayer';
 
 interface PartyPlayerProps {
   tracks: Array<{

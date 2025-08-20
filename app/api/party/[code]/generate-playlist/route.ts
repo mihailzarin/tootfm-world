@@ -107,10 +107,6 @@ export async function POST(
       recommendations.push(...spotifyRecs);
     }
 
-    // Если мало треков - добавляем популярные
-    if (recommendations.length < 10) {
-      recommendations.push(...getDefaultTracks());
-    }
 
     // 5. Дедупликация и сортировка
     recommendations = deduplicateAndSort(recommendations).slice(0, 30);
@@ -139,10 +135,6 @@ export async function POST(
             duration: 180000,
             partyId: party.id,
             addedById: party.creatorId,
-            voteCount: track.matchScore || (10 - i)
-          }
-        });
-        
         savedTracks.push({
           ...saved,
           sources: track.sources,
@@ -191,28 +183,100 @@ export async function POST(
 // ==========================================
 
 function analyzeUniversalProfiles(profiles: any[]): UniversalTrack[] {
+function analyzeUniversalProfiles(profiles: any[]): UniversalTrack[] {
   const trackMap = new Map<string, UniversalTrack>();
+  console.log(`🔍 Analyzing ${profiles.length} profiles...`);
 
-  profiles.forEach(({ profile }) => {
-    if (!profile.topTracks) return;
+  profiles.forEach(({ profile }, profileIndex) => {
+    console.log(`📊 Profile ${profileIndex + 1}:`, {
+      hasTopTracks: !!profile.topTracks,
+      hasTopArtists: !!profile.topArtists
+    });
+    
+    if (!profile.topTracks) {
+      console.log(`⚠️ Profile ${profileIndex + 1} has no topTracks`);
+      return;
+    }
 
     try {
       const tracks = JSON.parse(profile.topTracks);
+      console.log(`🎵 Found ${tracks.length} tracks in profile ${profileIndex + 1}`);
       
-      tracks.forEach((track: any) => {
-        // Определяем источник
+      tracks.forEach((track: any, trackIndex: number) => {
+        // Более детальное логирование
+        if (trackIndex < 5) {
+          console.log(`  Track ${trackIndex + 1}:`, {
+            name: track.name,
+            artist: track.artist || track.artists?.[0]?.name,
+            source: track.source
+          });
+        }
+        
+        // Улучшенное определение источника
         let source = 'unknown';
         let sourceId = '';
         
-        if (track.spotifyId || track.id?.includes('spotify')) {
+        if (track.source === 'Spotify' || track.spotifyId || track.id?.includes('spotify')) {
           source = 'spotify';
           sourceId = track.spotifyId || track.id;
-        } else if (track.mbid || track.url?.includes('last.fm')) {
+        } else if (track.source === 'Last.fm' || track.mbid || track.url?.includes('last.fm')) {
           source = 'lastfm';
           sourceId = track.mbid || track.url || '';
-        } else if (track.isrc || track.attributes) {
+        } else if (track.source === 'Apple Music' || track.isrc || track.attributes) {
           source = 'apple';
           sourceId = track.isrc || track.id || '';
+        }
+        
+        // Нормализуем artist
+        const artistName = typeof track.artist === 'string' 
+          ? track.artist 
+          : (track.artist?.name || track.artist?.['#text'] || track.artists?.[0]?.name || 'Unknown Artist');
+        
+        const key = normalizeTrackKey(track.name, artistName);
+        
+        if (!trackMap.has(key)) {
+          trackMap.set(key, {
+            name: track.name,
+            artist: artistName,
+            album: track.album || track.album?.name,
+            sources: {},
+            matchScore: 0,
+            sourceCount: 0
+          });
+        }
+        
+        const entry = trackMap.get(key)!;
+        
+        // Добавляем источник
+        if (source !== 'unknown') {
+          entry.sources[source] = sourceId;
+          entry.sourceCount = Object.keys(entry.sources).length;
+        }
+        
+        // Увеличиваем score (больше за популярность в профиле)
+        entry.matchScore += (tracks.length - trackIndex) + 10;
+      });
+    } catch (e) {
+      console.error(`❌ Error parsing tracks in profile ${profileIndex + 1}:`, e);
+    }
+  });
+
+  const result = Array.from(trackMap.values())
+    .sort((a, b) => {
+      // Приоритет: треки из нескольких источников
+      if (a.sourceCount !== b.sourceCount) {
+        return b.sourceCount - a.sourceCount;
+      }
+      return b.matchScore - a.matchScore;
+    });
+  
+  console.log(`✅ Generated ${result.length} universal tracks`);
+  result.slice(0, 10).forEach((track, i) => {
+    console.log(`  ${i + 1}. ${track.name} - ${track.artist} (score: ${track.matchScore}, sources: ${track.sourceCount})`);
+  });
+  
+  return result;
+}          sourceId = track.isrc || track.id || '';
         }
 
         // Нормализуем ключ
