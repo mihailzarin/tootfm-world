@@ -15,7 +15,6 @@ export default function ProfilePage() {
   const [userData, setUserData] = useState<any>(null);
   const [spotifyUser, setSpotifyUser] = useState<any>(null);
   const [lastfmUser, setLastfmUser] = useState<string | null>(null);
-  const hasAnyService = spotifyConnected || lastfmConnected || localStorage.getItem('apple_music_token');
   const [activeTab, setActiveTab] = useState('services');
 
   useEffect(() => {
@@ -69,6 +68,9 @@ export default function ProfilePage() {
     router.push('/');
   };
 
+  // Check for connected services (client-side only)
+  const hasAnyService = !!spotifyUser || !!lastfmUser || (typeof window !== 'undefined' && !!localStorage.getItem('apple_music_token'));
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
@@ -117,11 +119,17 @@ export default function ProfilePage() {
             <div className="w-20 h-20 bg-purple-600/20 rounded-full flex items-center justify-center">
               <User className="w-10 h-10 text-purple-400" />
             </div>
-            <div>
+            <div className="flex-1">
               <h1 className="text-3xl font-bold text-white">Your Profile</h1>
               <p className="text-gray-400">
                 {userData?.worldId ? `World ID: ${userData.worldId.substring(0, 12)}...` : 'Guest User'}
               </p>
+              {/* Create Party Button */}
+              {hasAnyService && (
+                <div className="mt-4">
+                  <CreatePartyButton hasServices={true} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -195,11 +203,14 @@ export default function ProfilePage() {
                 ) : (
                   <LastFmConnect />
                 )}
-                
-                {/* Apple Music */}
-                <div className="mt-4">
-                  <AppleMusicConnect />
+              </div>
+
+              {/* Apple Music */}
+              <div className="bg-white/5 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-white">Apple Music</h3>
                 </div>
+                <AppleMusicConnect />
               </div>
             </div>
           )}
