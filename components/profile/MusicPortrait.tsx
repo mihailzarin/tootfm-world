@@ -117,20 +117,15 @@ export default function MusicPortrait() {
 
   const fetchSpotifyData = async () => {
     try {
-      const hasCookie = document.cookie.includes('spotify_token');
-      if (!hasCookie) {
-        console.log('⚠️ No Spotify token in cookies');
-        return null;
-      }
-
       console.log('📊 Fetching Spotify data...');
-      const response = await fetch('/api/spotify/top-items'); // ✅ ИСПРАВЛЕНО!
+      const response = await fetch('/api/spotify/top-items');
       
       if (!response.ok) {
-        console.error('❌ Spotify API error:', response.status);
         if (response.status === 401) {
-          console.log('Token might be expired, need to refresh');
+          console.log('⚠️ Spotify not connected or token expired');
+          return null;
         }
+        console.error('❌ Spotify API error:', response.status);
         return null;
       }
       
@@ -149,16 +144,14 @@ export default function MusicPortrait() {
 
   const fetchLastFmData = async () => {
     try {
-      const hasCookie = document.cookie.includes('lastfm_session');
-      if (!hasCookie) {
-        console.log('⚠️ No Last.fm session in cookies');
-        return null;
-      }
-
       console.log('📊 Fetching Last.fm data...');
-      const response = await fetch('/api/music/lastfm/top-tracks'); // ✅ ИСПРАВЛЕНО!
+      const response = await fetch('/api/music/lastfm/top-tracks');
       
       if (!response.ok) {
+        if (response.status === 401) {
+          console.log('⚠️ Last.fm not connected');
+          return null;
+        }
         console.error('❌ Last.fm API error:', response.status);
         return null;
       }
