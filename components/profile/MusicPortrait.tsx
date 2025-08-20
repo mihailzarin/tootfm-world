@@ -51,8 +51,19 @@ export default function MusicPortrait() {
       const spotifyData = await fetchSpotifyData();
       const lastfmData = await fetchLastFmData();
       
+      console.log('📊 Raw data collected:', {
+        spotify: !!spotifyData,
+        lastfm: !!lastfmData
+      });
+      
       // Объединяем данные
       const combinedData = combineServiceData(spotifyData, lastfmData);
+      
+      console.log('🔄 Combined data:', {
+        tracks: combinedData.topTracks.length,
+        artists: combinedData.topArtists.length,
+        sources: combinedData.sources
+      });
       
       // Анализируем
       const analysis = analyzeData(combinedData);
@@ -83,7 +94,7 @@ export default function MusicPortrait() {
           const result = await response.json();
           console.log('📊 Server response:', result);
         } else {
-          console.error('❌ Failed to save profile to database');
+          console.error('❌ Failed to save profile to database:', response.status);
         }
       } catch (dbError) {
         console.error('❌ Database save error:', dbError);
@@ -107,14 +118,31 @@ export default function MusicPortrait() {
   const fetchSpotifyData = async () => {
     try {
       const hasCookie = document.cookie.includes('spotify_token');
-      if (!hasCookie) return null;
+      if (!hasCookie) {
+        console.log('⚠️ No Spotify token in cookies');
+        return null;
+      }
 
-      const response = await fetch('/api/music/spotify/top-items');
-      if (!response.ok) return null;
+      console.log('📊 Fetching Spotify data...');
+      const response = await fetch('/api/spotify/top-items'); // ✅ ИСПРАВЛЕНО!
       
-      return await response.json();
+      if (!response.ok) {
+        console.error('❌ Spotify API error:', response.status);
+        if (response.status === 401) {
+          console.log('Token might be expired, need to refresh');
+        }
+        return null;
+      }
+      
+      const data = await response.json();
+      console.log('✅ Spotify data received:', {
+        tracks: data.tracks?.items?.length || 0,
+        artists: data.artists?.items?.length || 0
+      });
+      
+      return data;
     } catch (e) {
-      console.error('Spotify fetch error:', e);
+      console.error('❌ Spotify fetch error:', e);
       return null;
     }
   };
@@ -122,14 +150,31 @@ export default function MusicPortrait() {
   const fetchLastFmData = async () => {
     try {
       const hasCookie = document.cookie.includes('lastfm_session');
-      if (!hasCookie) return null;
+      if (!hasCookie) {
+        console.log('⚠️ No Last.fm session in cookies');
+        return null;
+      }
 
-      const response = await fetch('/api/music/lastfm/top-items');
-      if (!response.ok) return null;
+      console.log('📊 Fetching Last.fm data...');
+      const response = await fetch('/api/music/lastfm/top-tracks'); // ✅ ИСПРАВЛЕНО!
       
-      return await response.json();
+      if (!response.ok) {
+        console.error('❌ Last.fm API error:', response.status);
+        return null;
+      }
+      
+      const data = await response.json();
+      console.log('✅ Last.fm data received:', {
+        tracks: data.tracks?.length || 0
+      });
+      
+      // Адаптируем формат Last.fm под ожидаемую структуру
+      return {
+        recentTracks: data.tracks || [],
+        topArtists: [] // Last.fm endpoint для артистов отдельный, если нужно
+      };
     } catch (e) {
-      console.error('Last.fm fetch error:', e);
+      console.error('❌ Last.fm fetch error:', e);
       return null;
     }
   };
@@ -162,18 +207,27 @@ export default function MusicPortrait() {
     if (lastfm) {
       combined.sources.push('Last.fm');
       if (lastfm.recentTracks) {
+        // Адаптируем формат Last.fm треков
         combined.topTracks.push(...lastfm.recentTracks.map((t: any) => ({
-          ...t,
+          name: t.title || t.name,
+          artists: [{ name: t.artist }],
+          album: { name: t.album },
           source: 'Last.fm'
         })));
       }
-      if (lastfm.topArtists) {
+      if (lastfm.topArtists && lastfm.topArtists.length > 0) {
         combined.topArtists.push(...lastfm.topArtists.map((a: any) => ({
           ...a,
           source: 'Last.fm'
         })));
       }
     }
+
+    console.log('🔀 Combined service data:', {
+      totalTracks: combined.topTracks.length,
+      totalArtists: combined.topArtists.length,
+      sources: combined.sources
+    });
 
     return combined;
   };
@@ -191,6 +245,12 @@ export default function MusicPortrait() {
     });
 
     const topGenres = Array.from(genres).slice(0, 10);
+
+    // Если жанров нет, пробуем извлечь из имен артистов или треков
+    if (topGenres.length === 0 && data.topTracks.length > 0) {
+      console.log('⚠️ No genres found, using fallback genres');
+      topGenres.push('Pop', 'Rock', 'Electronic'); // Fallback genres
+    }
 
     // Определяем музыкальную личность
     const personality = generatePersonality(topGenres, data.topTracks);
@@ -271,17 +331,18 @@ export default function MusicPortrait() {
       energyLevel: 0.75,
       diversityScore: 0.85,
       topArtists: [
-        { name: 'Artist 1', genres: ['Pop'] },
-        { name: 'Artist 2', genres: ['Electronic'] }
+        { name: 'Demo Artist 1', genres: ['Pop'], source: 'Demo' },
+        { name: 'Demo Artist 2', genres: ['Electronic'], source: 'Demo' }
       ],
       topTracks: [
-        { name: 'Track 1', artist: 'Artist 1' },
-        { name: 'Track 2', artist: 'Artist 2' }
+        { name: 'Demo Track 1', artists: [{name: 'Artist 1'}], source: 'Demo' },
+        { name: 'Demo Track 2', artists: [{name: 'Artist 2'}], source: 'Demo' }
       ],
       sources: ['Demo Data']
     };
     
     setProfile(demo);
+    console.log('📊 Loaded demo profile');
   };
 
   return (
