@@ -2,8 +2,8 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { Music, Users, Plus, Copy, Check, ArrowLeft, Loader2 } from 'lucide-react';
-import PartyPlayer from '@/src/components/party/PartyPlayer';  // Правильный путь!
+import { Music, Users, Plus, Copy, Check, ArrowLeft, Loader2, Sparkles } from 'lucide-react';
+import PartyPlayer from '@/src/components/party/PartyPlayer';
 
 export default function PartyPage() {
   const params = useParams();
@@ -14,6 +14,10 @@ export default function PartyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
+  
+  // Новые состояния для генерации плейлиста
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [playlistGenerated, setPlaylistGenerated] = useState(false);
 
   useEffect(() => {
     if (code) {
@@ -54,6 +58,40 @@ export default function PartyPage() {
     }
   };
 
+  // Функция генерации плейлиста из Music Portraits
+  const generatePlaylist = async () => {
+    try {
+      setIsGenerating(true);
+      
+      const response = await fetch(`/api/party/${code.toUpperCase()}/generate-playlist`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate playlist');
+      }
+      
+      const data = await response.json();
+      console.log('Generated playlist:', data);
+      
+      // Перезагружаем данные party чтобы получить новые треки
+      await fetchPartyData();
+      setPlaylistGenerated(true);
+      
+      // Показываем успех на 3 секунды
+      setTimeout(() => setPlaylistGenerated(false), 3000);
+      
+    } catch (error) {
+      console.error('Error generating playlist:', error);
+      alert('Failed to generate playlist. Make sure party members have connected their music services and generated Music Portraits.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const copyCode = () => {
     navigator.clipboard.writeText(code.toUpperCase());
     setCopied(true);
@@ -89,35 +127,18 @@ export default function PartyPage() {
     );
   }
 
-  // Добавляем демо-треки если party пустая
-  const demoTracks = party.tracks && party.tracks.length > 0 ? party.tracks : [
+  // Используем реальные треки из БД или показываем заглушку
+  const hasRealTracks = party.tracks && party.tracks.length > 0;
+  const displayTracks = hasRealTracks ? party.tracks : [
     {
-      id: '1',
-      spotifyId: '3n3Ppam7vgaVa1iaRUc9Lp',
-      name: 'Mr. Brightside',
-      artist: 'The Killers',
-      album: 'Hot Fuss',
-      albumArt: 'https://i.scdn.co/image/ab67616d0000b27342189b673b2f3b6c1a3b5b5f',
-      duration: 222000,
-      voteCount: 5
-    },
-    {
-      id: '2',
-      spotifyId: '7qiZfU4dY1lWllzX7mPBI3',
-      name: 'Shape of You',
-      artist: 'Ed Sheeran',
-      album: '÷ (Deluxe)',
-      duration: 233000,
-      voteCount: 3
-    },
-    {
-      id: '3',
-      spotifyId: '1zi7xx7UVEFkmKfv06H8x0',
-      name: 'One More Time',
-      artist: 'Daft Punk',
-      album: 'Discovery',
-      duration: 320000,
-      voteCount: 7
+      id: 'placeholder-1',
+      spotifyId: 'placeholder',
+      name: 'No tracks yet',
+      artist: 'Generate playlist to start',
+      album: '',
+      albumArt: null,
+      duration: 0,
+      voteCount: 0
     }
   ];
 
@@ -184,7 +205,9 @@ export default function PartyPage() {
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-400">Tracks</span>
-                  <span className="text-white font-medium">{demoTracks.length}</span>
+                  <span className="text-white font-medium">
+                    {hasRealTracks ? party.tracks.length : 0}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-400">Host</span>
@@ -196,12 +219,14 @@ export default function PartyPage() {
               </div>
             </div>
 
-            {/* Spotify Player */}
-            <PartyPlayer 
-              tracks={demoTracks}
-              partyCode={party.code}
-              isHost={isHost}
-            />
+            {/* Spotify Player - только если есть реальные треки */}
+            {hasRealTracks && (
+              <PartyPlayer 
+                tracks={party.tracks}
+                partyCode={party.code}
+                isHost={isHost}
+              />
+            )}
           </div>
 
           {/* Right Column - Tracks */}
@@ -209,54 +234,118 @@ export default function PartyPage() {
             <div className="bg-white/5 backdrop-blur rounded-2xl p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold text-white">Playlist</h2>
-                <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Add Track
-                </button>
+                <div className="flex gap-2">
+                  {/* Generate Playlist Button */}
+                  {(!hasRealTracks || isHost) && (
+                    <button 
+                      onClick={generatePlaylist}
+                      disabled={isGenerating}
+                      className={`${
+                        playlistGenerated 
+                          ? 'bg-green-600 hover:bg-green-700' 
+                          : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700'
+                      } text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {isGenerating ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Generating...
+                        </>
+                      ) : playlistGenerated ? (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Generated!
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          Generate from Music Portraits
+                        </>
+                      )}
+                    </button>
+                  )}
+                  
+                  <button className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
+                    <Plus className="w-4 h-4" />
+                    Add Track
+                  </button>
+                </div>
               </div>
 
+              {/* Tracks List */}
               <div className="space-y-3">
-                {demoTracks
-                  .sort((a: any, b: any) => (b.voteCount || 0) - (a.voteCount || 0))
-                  .map((track: any, index: number) => (
-                    <div 
-                      key={track.id} 
-                      className="bg-white/5 rounded-xl p-4 flex items-center gap-4 hover:bg-white/10 transition"
-                    >
-                      <span className="text-2xl text-gray-500 font-bold w-12 text-center">
-                        {index + 1}
-                      </span>
-                      {track.albumArt && (
-                        <img 
-                          src={track.albumArt} 
-                          alt={track.album}
-                          className="w-12 h-12 rounded-lg"
-                        />
-                      )}
-                      <div className="flex-1">
-                        <p className="text-white font-medium">{track.name}</p>
-                        <p className="text-gray-400 text-sm">{track.artist}</p>
-                        {track.album && (
-                          <p className="text-gray-500 text-xs">{track.album}</p>
+                {!hasRealTracks ? (
+                  // Показываем сообщение если нет треков
+                  <div className="text-center py-12">
+                    <Music className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                    <p className="text-gray-400 text-lg mb-2">No tracks in playlist yet</p>
+                    <p className="text-gray-500 text-sm">
+                      Click "Generate from Music Portraits" to create a personalized playlist
+                    </p>
+                    <p className="text-gray-500 text-sm mt-2">
+                      based on party members' music tastes
+                    </p>
+                  </div>
+                ) : (
+                  // Показываем реальные треки
+                  displayTracks
+                    .sort((a: any, b: any) => (b.voteCount || 0) - (a.voteCount || 0))
+                    .map((track: any, index: number) => (
+                      <div 
+                        key={track.id} 
+                        className="bg-white/5 rounded-xl p-4 flex items-center gap-4 hover:bg-white/10 transition"
+                      >
+                        <span className="text-2xl text-gray-500 font-bold w-12 text-center">
+                          {index + 1}
+                        </span>
+                        {track.albumArt && (
+                          <img 
+                            src={track.albumArt} 
+                            alt={track.album}
+                            className="w-12 h-12 rounded-lg"
+                          />
                         )}
-                      </div>
-                      <div className="text-center">
-                        <div className="text-purple-400 font-bold text-lg">
-                          {track.voteCount || 0}
+                        <div className="flex-1">
+                          <p className="text-white font-medium">{track.name}</p>
+                          <p className="text-gray-400 text-sm">{track.artist}</p>
+                          {track.album && (
+                            <p className="text-gray-500 text-xs">{track.album}</p>
+                          )}
                         </div>
-                        <div className="text-gray-500 text-xs">votes</div>
+                        <div className="text-center">
+                          <div className="text-purple-400 font-bold text-lg">
+                            {track.voteCount || 0}
+                          </div>
+                          <div className="text-gray-500 text-xs">votes</div>
+                        </div>
+                        <div className="flex gap-1">
+                          <button className="p-2 hover:bg-white/10 rounded-lg transition">
+                            👍
+                          </button>
+                          <button className="p-2 hover:bg-white/10 rounded-lg transition">
+                            👎
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex gap-1">
-                        <button className="p-2 hover:bg-white/10 rounded-lg transition">
-                          👍
-                        </button>
-                        <button className="p-2 hover:bg-white/10 rounded-lg transition">
-                          👎
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                )}
               </div>
+
+              {/* Регенерация плейлиста для хоста если уже есть треки */}
+              {hasRealTracks && isHost && (
+                <div className="mt-6 pt-6 border-t border-white/10 text-center">
+                  <p className="text-gray-500 text-sm mb-2">
+                    Want to refresh the playlist with updated Music Portraits?
+                  </p>
+                  <button 
+                    onClick={generatePlaylist}
+                    disabled={isGenerating}
+                    className="text-purple-400 hover:text-purple-300 text-sm font-medium transition"
+                  >
+                    Regenerate Playlist
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
