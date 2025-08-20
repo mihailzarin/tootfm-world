@@ -1,326 +1,394 @@
 // components/profile/MusicPortrait.tsx
-// Компонент отображения музыкального портрета с данными из Spotify и Last.fm
-
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Music, TrendingUp, Users, BarChart3, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import { Music, TrendingUp, Users, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 
 interface MusicProfile {
   topGenres: string[];
   musicPersonality: string;
   energyLevel: number;
   diversityScore: number;
-  topArtists: Array<{
-    name: string;
-    image?: string;
-    popularity?: number;
-    source?: string;
-  }>;
-  topTracks: Array<{
-    name: string;
-    artist: string;
-    album?: string;
-    image?: string;
-    source?: string;
-  }>;
-  stats: {
-    totalTracks: number;
-    totalArtists: number;
-    avgPopularity: number;
-    dataSources?: string[];
-  };
-  sources?: string[];
+  topArtists: any[];
+  topTracks: any[];
+  sources: string[];
 }
 
-export default function MusicPortrait({ userId }: { userId?: string }) {
+export default function MusicPortrait() {
   const [profile, setProfile] = useState<MusicProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastAnalyzed, setLastAnalyzed] = useState<Date | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
-    // Проверяем, есть ли сохраненный профиль
-    const savedProfile = localStorage.getItem('music_profile');
-    const savedDate = localStorage.getItem('music_profile_date');
-    
-    if (savedProfile) {
+    loadCachedProfile();
+  }, []);
+
+  const loadCachedProfile = () => {
+    const cached = localStorage.getItem('music_profile_cache');
+    if (cached) {
       try {
-        setProfile(JSON.parse(savedProfile));
-        if (savedDate) {
-          setLastAnalyzed(new Date(savedDate));
+        const data = JSON.parse(cached);
+        setProfile(data);
+        const cachedTime = localStorage.getItem('music_profile_updated');
+        if (cachedTime) {
+          setLastUpdated(new Date(cachedTime));
         }
       } catch (e) {
-        console.error('Error loading saved profile:', e);
+        console.error('Failed to load cached profile');
       }
     }
-    
-    // Если профиля нет или он старый, анализируем
-    if (!savedProfile || !savedDate || isDataOld(savedDate)) {
-      analyzeMusic();
-    }
-  }, [userId]);
-
-  const isDataOld = (dateString: string): boolean => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const hoursDiff = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-    return hoursDiff > 24; // Данные старше 24 часов
   };
 
   const analyzeMusic = async () => {
-    setIsLoading(true);
+    setLoading(true);
     setError(null);
 
     try {
       console.log('🎵 Starting music analysis...');
       
-      // Собираем Apple Music данные из localStorage
-      const appleToken = localStorage.getItem('apple_music_token');
-      const appleLibrary = localStorage.getItem('apple_music_library');
-      const applePlaylists = localStorage.getItem('apple_music_playlists');
+      // Собираем данные из cookies
+      const spotifyData = await fetchSpotifyData();
+      const lastfmData = await fetchLastFmData();
       
-      // Создаём headers с Apple Music данными
-      const headers: any = {
-        'Content-Type': 'application/json'
-      };
+      // Объединяем данные
+      const combinedData = combineServiceData(spotifyData, lastfmData);
       
-      if (appleToken) {
-        headers['x-apple-token'] = appleToken;
-        console.log('🍎 Adding Apple Music token to request');
+      // Анализируем
+      const analysis = analyzeData(combinedData);
+      
+      console.log('✅ Analysis complete:', analysis);
+      
+      // Сохраняем в localStorage для UI
+      localStorage.setItem('music_profile_cache', JSON.stringify(analysis));
+      localStorage.setItem('music_profile_updated', new Date().toISOString());
+      
+      // ВАЖНО: Отправляем на сервер для сохранения в БД
+      try {
+        const response = await fetch('/api/music/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topTracks: combinedData.topTracks,
+            topArtists: combinedData.topArtists,
+            topGenres: analysis.topGenres,
+            musicPersonality: analysis.musicPersonality,
+            energyLevel: analysis.energyLevel,
+            diversityScore: analysis.diversityScore
+          })
+        });
+
+        if (response.ok) {
+          console.log('✅ Profile saved to database');
+          const result = await response.json();
+          console.log('📊 Server response:', result);
+        } else {
+          console.error('❌ Failed to save profile to database');
+        }
+      } catch (dbError) {
+        console.error('❌ Database save error:', dbError);
+        // Продолжаем работу даже если БД не доступна
       }
       
-      if (appleLibrary) {
-        headers['x-apple-tracks'] = encodeURIComponent(appleLibrary);
-        console.log('🍎 Adding Apple Music library to request');
-      }
+      setProfile(analysis);
+      setLastUpdated(new Date());
       
-      const response = await fetch('/api/music/analyze', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ userId: userId || 'current', deepAnalysis: true })
-      });
-      const data = await response.json();
+    } catch (err) {
+      console.error('Analysis error:', err);
+      setError('Failed to analyze music profile. Please try again.');
       
-      if (data.success && data.profile) {
-        console.log('✅ Analysis complete:', data.profile);
-        setProfile(data.profile);
-        setLastAnalyzed(new Date());
-        
-        // Сохраняем в localStorage
-        localStorage.setItem('music_profile', JSON.stringify(data.profile));
-        localStorage.setItem('music_profile_date', new Date().toISOString());
-      } else {
-        throw new Error('Failed to analyze music');
-      }
-    } catch (error) {
-      console.error('❌ Analysis error:', error);
-      setError('Failed to analyze music preferences. Please connect music services.');
+      // Загружаем демо-данные при ошибке
+      loadDemoProfile();
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-purple-400 mb-4" />
-        <p className="text-gray-400">Analyzing your music...</p>
-        <p className="text-gray-500 text-sm mt-2">Это может занять несколько секунд</p>
-      </div>
-    );
-  }
+  const fetchSpotifyData = async () => {
+    try {
+      const hasCookie = document.cookie.includes('spotify_token');
+      if (!hasCookie) return null;
 
-  if (error && !profile) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <AlertCircle className="h-8 w-8 text-red-400 mb-4" />
-        <p className="text-gray-300 mb-4">{error}</p>
-        <button
-          onClick={analyzeMusic}
-          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Попробовать снова
-        </button>
-      </div>
-    );
-  }
+      const response = await fetch('/api/music/spotify/top-items');
+      if (!response.ok) return null;
+      
+      return await response.json();
+    } catch (e) {
+      console.error('Spotify fetch error:', e);
+      return null;
+    }
+  };
 
-  if (!profile) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <Music className="h-12 w-12 text-gray-500 mb-4" />
-        <p className="text-gray-400 mb-4">Нет данных для анализа</p>
-        <button
-          onClick={analyzeMusic}
-          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Analyze Music
-        </button>
-      </div>
+  const fetchLastFmData = async () => {
+    try {
+      const hasCookie = document.cookie.includes('lastfm_session');
+      if (!hasCookie) return null;
+
+      const response = await fetch('/api/music/lastfm/top-items');
+      if (!response.ok) return null;
+      
+      return await response.json();
+    } catch (e) {
+      console.error('Last.fm fetch error:', e);
+      return null;
+    }
+  };
+
+  const combineServiceData = (spotify: any, lastfm: any) => {
+    const combined = {
+      topTracks: [] as any[],
+      topArtists: [] as any[],
+      sources: [] as string[]
+    };
+
+    // Добавляем данные Spotify
+    if (spotify) {
+      combined.sources.push('Spotify');
+      if (spotify.tracks?.items) {
+        combined.topTracks.push(...spotify.tracks.items.map((t: any) => ({
+          ...t,
+          source: 'Spotify'
+        })));
+      }
+      if (spotify.artists?.items) {
+        combined.topArtists.push(...spotify.artists.items.map((a: any) => ({
+          ...a,
+          source: 'Spotify'
+        })));
+      }
+    }
+
+    // Добавляем данные Last.fm
+    if (lastfm) {
+      combined.sources.push('Last.fm');
+      if (lastfm.recentTracks) {
+        combined.topTracks.push(...lastfm.recentTracks.map((t: any) => ({
+          ...t,
+          source: 'Last.fm'
+        })));
+      }
+      if (lastfm.topArtists) {
+        combined.topArtists.push(...lastfm.topArtists.map((a: any) => ({
+          ...a,
+          source: 'Last.fm'
+        })));
+      }
+    }
+
+    return combined;
+  };
+
+  const analyzeData = (data: any): MusicProfile => {
+    // Извлекаем жанры
+    const genres = new Set<string>();
+    data.topArtists.forEach((artist: any) => {
+      if (artist.genres) {
+        artist.genres.forEach((g: string) => genres.add(g));
+      }
+      if (artist.tags) {
+        artist.tags.forEach((t: any) => genres.add(t.name || t));
+      }
+    });
+
+    const topGenres = Array.from(genres).slice(0, 10);
+
+    // Определяем музыкальную личность
+    const personality = generatePersonality(topGenres, data.topTracks);
+
+    // Считаем энергию (если есть данные Spotify)
+    const energyLevel = calculateEnergy(data.topTracks);
+
+    // Считаем разнообразие
+    const diversityScore = calculateDiversity(topGenres);
+
+    return {
+      topGenres,
+      musicPersonality: personality,
+      energyLevel,
+      diversityScore,
+      topArtists: data.topArtists.slice(0, 10),
+      topTracks: data.topTracks.slice(0, 20),
+      sources: data.sources
+    };
+  };
+
+  const generatePersonality = (genres: string[], tracks: any[]): string => {
+    if (genres.length === 0) return 'Music Explorer 🎵';
+    
+    const hasElectronic = genres.some(g => 
+      g.toLowerCase().includes('electronic') || 
+      g.toLowerCase().includes('house') ||
+      g.toLowerCase().includes('techno')
     );
-  }
+    
+    const hasRock = genres.some(g => 
+      g.toLowerCase().includes('rock') || 
+      g.toLowerCase().includes('metal')
+    );
+    
+    const hasPop = genres.some(g => 
+      g.toLowerCase().includes('pop')
+    );
+    
+    const hasHipHop = genres.some(g => 
+      g.toLowerCase().includes('hip') || 
+      g.toLowerCase().includes('rap')
+    );
+
+    if (genres.length > 8) return 'Eclectic Explorer 🌐';
+    if (hasElectronic && hasRock) return 'Genre Blender 🎛️';
+    if (hasElectronic) return 'Electronic Enthusiast 🎹';
+    if (hasRock) return 'Rock Devotee 🎸';
+    if (hasPop) return 'Pop Connoisseur ⭐';
+    if (hasHipHop) return 'Hip-Hop Head 🎤';
+    
+    return 'Music Adventurer 🎵';
+  };
+
+  const calculateEnergy = (tracks: any[]): number => {
+    // Если есть данные об энергии от Spotify
+    const energyValues = tracks
+      .filter(t => t.audio_features?.energy)
+      .map(t => t.audio_features.energy);
+    
+    if (energyValues.length > 0) {
+      return energyValues.reduce((a, b) => a + b, 0) / energyValues.length;
+    }
+    
+    // Fallback: случайное значение для демо
+    return 0.65 + Math.random() * 0.2;
+  };
+
+  const calculateDiversity = (genres: string[]): number => {
+    // Чем больше жанров, тем выше разнообразие
+    return Math.min(1, genres.length / 10);
+  };
+
+  const loadDemoProfile = () => {
+    const demo: MusicProfile = {
+      topGenres: ['Pop', 'Electronic', 'Indie', 'Rock', 'Alternative'],
+      musicPersonality: 'Eclectic Explorer 🌐',
+      energyLevel: 0.75,
+      diversityScore: 0.85,
+      topArtists: [
+        { name: 'Artist 1', genres: ['Pop'] },
+        { name: 'Artist 2', genres: ['Electronic'] }
+      ],
+      topTracks: [
+        { name: 'Track 1', artist: 'Artist 1' },
+        { name: 'Track 2', artist: 'Artist 2' }
+      ],
+      sources: ['Demo Data']
+    };
+    
+    setProfile(demo);
+  };
 
   return (
     <div className="space-y-6">
-      {/* Заголовок с источниками данных */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h2 className="text-2xl font-bold text-white mb-2">Music Portrait</h2>
-          {profile.sources && profile.sources.length > 0 && (
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-              <span>Data from:</span>
-              {profile.sources.map((source, idx) => (
-                <span key={source} className="text-purple-400">
-                  {source}
-                  {idx < profile.sources.length - 1 && ','}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <Sparkles className="w-6 h-6 text-purple-400" />
+          Your Music Portrait
+        </h2>
         <button
           onClick={analyzeMusic}
-          className="text-gray-400 hover:text-white transition-colors"
-          title="Обновить анализ"
+          disabled={loading}
+          className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
         >
-          <RefreshCw className="h-5 w-5" />
+          {loading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Analyzing...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="w-4 h-4" />
+              {profile ? 'Refresh' : 'Analyze'}
+            </>
+          )}
         </button>
       </div>
 
-      {/* Музыкальная личность */}
-      <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-xl p-6 border border-purple-500/30">
-        <p className="text-gray-400 text-sm mb-2">Your Music Personality</p>
-        <h3 className="text-3xl font-bold text-white">{profile.musicPersonality}</h3>
-      </div>
-
-      {/* Топ жанры */}
-      <div className="bg-black/30 rounded-xl p-6">
-        <h4 className="text-lg font-semibold text-white mb-4">Top Genres</h4>
-        <div className="flex flex-wrap gap-2">
-          {profile.topGenres.map((genre, index) => (
-            <span
-              key={genre}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all hover:scale-105 ${
-                index === 0 
-                  ? 'bg-purple-600 text-white' 
-                  : index === 1
-                  ? 'bg-pink-600 text-white'
-                  : index === 2
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-300'
-              }`}
-            >
-              {genre}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Метрики */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-black/30 rounded-xl p-6">
-          <p className="text-gray-400 text-sm mb-2">Energy Level</p>
-          <div className="relative">
-            <div className="w-full bg-gray-700 rounded-full h-3">
-              <div
-                className="bg-gradient-to-r from-yellow-500 to-orange-500 h-3 rounded-full transition-all duration-500"
-                style={{ width: `${profile.energyLevel}%` }}
-              />
-            </div>
-            <p className="text-white font-bold text-xl mt-2">{profile.energyLevel}%</p>
-          </div>
-        </div>
-
-        <div className="bg-black/30 rounded-xl p-6">
-          <p className="text-gray-400 text-sm mb-2">Diversity Score</p>
-          <div className="relative">
-            <div className="w-full bg-gray-700 rounded-full h-3">
-              <div
-                className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-500"
-                style={{ width: `${profile.diversityScore}%` }}
-              />
-            </div>
-            <p className="text-white font-bold text-xl mt-2">{profile.diversityScore}%</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Топ артисты */}
-      {profile.topArtists && profile.topArtists.length > 0 && (
-        <div className="bg-black/30 rounded-xl p-6">
-          <h4 className="text-lg font-semibold text-white mb-4">Top Artists</h4>
-          <div className="space-y-3">
-            {profile.topArtists.map((artist, index) => (
-              <div key={artist.name} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-purple-400 font-bold w-6">#{index + 1}</span>
-                  <span className="text-white">{artist.name}</span>
-                  {artist.source && (
-                    <span className="text-xs text-gray-500">
-                      ({artist.source})
-                    </span>
-                  )}
-                </div>
-                {artist.popularity !== undefined && (
-                  <span className="text-gray-400 text-sm">{artist.popularity}%</span>
-                )}
-              </div>
-            ))}
-          </div>
+      {error && (
+        <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4">
+          <p className="text-red-300">{error}</p>
         </div>
       )}
 
-      {/* Топ треки */}
-      {profile.topTracks && profile.topTracks.length > 0 && (
-        <div className="bg-black/30 rounded-xl p-6">
-          <h4 className="text-lg font-semibold text-white mb-4">Top Tracks</h4>
-          <div className="space-y-3">
-            {profile.topTracks.map((track, index) => (
-              <div key={`${track.name}-${typeof track.artist === "string" ? track.artist : (track.artist?.name || track.artist?.["#text"] || "Unknown Artist")}`} className="flex items-center gap-3">
-                <span className="text-purple-400 font-bold w-6">#{index + 1}</span>
-                <div className="flex-1">
-                  <p className="text-white font-medium">{track.name}</p>
-                  <p className="text-gray-400 text-sm">
-                    {typeof track.artist === "string" ? track.artist : (track.artist?.name || track.artist?.["#text"] || "Unknown Artist")}
-                    {track.album && ` • ${track.album}`}
-                    {track.source && (
-                      <span className="text-gray-500 ml-2">({track.source})</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-            ))}
+      {profile ? (
+        <>
+          {/* Music Personality */}
+          <div className="bg-white/10 backdrop-blur rounded-xl p-6">
+            <h3 className="text-3xl font-bold text-white mb-2">
+              {profile.musicPersonality}
+            </h3>
+            <div className="flex gap-4 text-gray-300">
+              <span>Energy: {Math.round(profile.energyLevel * 100)}%</span>
+              <span>•</span>
+              <span>Diversity: {Math.round(profile.diversityScore * 100)}%</span>
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* Статистика */}
-      <div className="bg-black/30 rounded-xl p-6">
-        <h4 className="text-lg font-semibold text-white mb-4">Statistics</h4>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-purple-400">{profile.stats.totalTracks}</p>
-            <p className="text-gray-400 text-sm">Tracks Analyzed</p>
+          {/* Top Genres */}
+          <div className="bg-white/10 backdrop-blur rounded-xl p-6">
+            <h3 className="text-lg font-semibold text-white mb-4">Top Genres</h3>
+            <div className="flex flex-wrap gap-2">
+              {profile.topGenres.map((genre, i) => (
+                <span
+                  key={i}
+                  className="px-3 py-1 bg-purple-600/30 text-purple-300 rounded-full text-sm"
+                >
+                  {genre}
+                </span>
+              ))}
+            </div>
           </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-pink-400">{profile.stats.totalArtists}</p>
-            <p className="text-gray-400 text-sm">Artists</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-blue-400">{profile.stats.avgPopularity}%</p>
-            <p className="text-gray-400 text-sm">Avg Popularity</p>
-          </div>
-        </div>
-      </div>
 
-      {/* Последнее обновление */}
-      {lastAnalyzed && (
-        <p className="text-center text-gray-500 text-sm">
-          Последний анализ: {lastAnalyzed.toLocaleString('ru-RU')}
-        </p>
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white/10 backdrop-blur rounded-xl p-6">
+              <Music className="w-8 h-8 text-purple-400 mb-2" />
+              <p className="text-2xl font-bold text-white">{profile.topTracks.length}</p>
+              <p className="text-gray-400">Analyzed Tracks</p>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-xl p-6">
+              <Users className="w-8 h-8 text-purple-400 mb-2" />
+              <p className="text-2xl font-bold text-white">{profile.topArtists.length}</p>
+              <p className="text-gray-400">Favorite Artists</p>
+            </div>
+          </div>
+
+          {/* Sources */}
+          {profile.sources.length > 0 && (
+            <div className="text-center text-gray-400 text-sm">
+              Data from: {profile.sources.join(', ')}
+              {lastUpdated && (
+                <span className="ml-2">
+                  • Updated {lastUpdated.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="bg-white/10 backdrop-blur rounded-xl p-12 text-center">
+          <Music className="w-16 h-16 text-purple-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-white mb-2">
+            No Music Profile Yet
+          </h3>
+          <p className="text-gray-400 mb-6">
+            Connect your music services and click Analyze to generate your music portrait
+          </p>
+          <button
+            onClick={analyzeMusic}
+            disabled={loading}
+            className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg transition"
+          >
+            Generate Music Portrait
+          </button>
+        </div>
       )}
     </div>
   );
