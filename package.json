@@ -16,6 +16,8 @@
     "@types/spotify-web-api-node": "^5.0.11",
     "@worldcoin/idkit": "^2.4.1",
     "@worldcoin/minikit-js": "^1.9.6",
+    "cookie": "^1.0.2",
+    "googleapis": "^156.0.0",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.539.0",
     "nanoid": "^5.1.5",

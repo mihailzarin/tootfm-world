@@ -13,12 +13,23 @@ model User {
   primaryId      String?        @unique @default(cuid())
   credentialType String?
   verified       Boolean        @default(true)
+  
+  // Google OAuth fields
+  googleId       String?        @unique
+  email          String?        @unique
+  emailVerified  Boolean        @default(false)
+  
+  // Profile fields
   displayName    String?
   avatar         String?
-  email          String?
   level          String?        @default("guest")
+  
+  // Timestamps
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+  lastLogin      DateTime?
+  
+  // Relations
   musicProfile   MusicProfile?
   musicServices  MusicService[]
   createdParties Party[]        @relation("PartyCreator")
@@ -29,6 +40,7 @@ model User {
 
   @@index([primaryId])
   @@index([email])
+  @@index([googleId])
 }
 
 model Party {
@@ -136,13 +148,14 @@ model MusicProfile {
   musicPersonality   String?
   energyLevel        Float?   @default(0.5)
   danceability       Float?   @default(0.5)
-  diversity          Float?   @default(0.5)
+  diversityScore     Float?   @default(0.5)
   mainstreamScore    Float?   @default(0.5)
   genreVector        Float[]  @default([])
   audioFeatureVector Float[]  @default([])
   calculatedAt       DateTime @default(now())
   createdAt          DateTime @default(now())
   updatedAt          DateTime @default(now()) @updatedAt
+  lastUpdated        DateTime @default(now())
   version            Int      @default(1)
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -174,6 +187,7 @@ enum ServiceType {
   YOUTUBE
   SOUNDCLOUD
   TIDAL
+  GOOGLE
 }
 
 enum SyncStatus {
