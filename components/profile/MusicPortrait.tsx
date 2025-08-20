@@ -103,7 +103,7 @@ export default function MusicPortrait({ userId }: { userId?: string }) {
       const data = await response.json();
       
       if (data.success && data.profile) {
-        console.log('✅ Analysis complete:', data.sources);
+        console.log('✅ Analysis complete:', data.profile);
         setProfile(data.profile);
         setLastAnalyzed(new Date());
         
