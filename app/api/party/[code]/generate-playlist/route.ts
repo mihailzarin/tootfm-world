@@ -127,6 +127,8 @@ export async function POST(
         
         const saved = await prisma.track.create({
           data: {
+        const saved = await prisma.track.create({
+          data: {
             spotifyId: spotifyId,
             name: track.name,
             artist: track.artist,
@@ -135,15 +137,15 @@ export async function POST(
             duration: 180000,
             partyId: party.id,
             addedById: party.creatorId,
+            voteCount: track.matchScore || (10 - i)
+          }
+        });
+        
         savedTracks.push({
           ...saved,
           sources: track.sources,
           sourceCount: track.sourceCount
-        });
-        
-      } catch (error) {
-        console.error(`❌ Failed to save: ${track.name}`, error);
-        saveErrors.push({
+        });        saveErrors.push({
           track: `${track.name} - ${track.artist}`,
           error: error instanceof Error ? error.message : 'Unknown'
         });
