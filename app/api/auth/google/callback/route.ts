@@ -1,6 +1,7 @@
 // app/api/auth/google/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
+import { prisma } from '@/lib/prisma';
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -41,8 +42,39 @@ export async function GET(request: NextRequest) {
     const { data } = await oauth2.userinfo.get();
     console.log('✅ User:', data.email);
 
-    // БЕЗ БАЗЫ ДАННЫХ - просто сохраняем в cookies
+    // ВАЖНО: Создаём или находим пользователя в БД
     const userId = `google_${data.id}`;
+    
+    // Находим или создаём пользователя в БД
+    let dbUser = await prisma.user.findUnique({
+      where: { worldId: userId }
+    });
+    
+    if (!dbUser) {
+      console.log('📝 Creating new user in database...');
+      dbUser = await prisma.user.create({
+        data: {
+          worldId: userId,
+          googleId: data.id,
+          email: data.email,
+          displayName: data.name || 'User',
+          avatar: data.picture,
+          verified: true
+        }
+      });
+      console.log('✅ User created:', dbUser.id);
+    } else {
+      console.log('✅ Found existing user:', dbUser.id);
+      // Обновляем данные если нужно
+      await prisma.user.update({
+        where: { id: dbUser.id },
+        data: {
+          email: data.email,
+          displayName: data.name || dbUser.displayName,
+          avatar: data.picture || dbUser.avatar
+        }
+      });
+    }
     
     // Правильный redirect URL для продакшена
     const profileUrl = process.env.NODE_ENV === 'production'
@@ -54,7 +86,7 @@ export async function GET(request: NextRequest) {
     // Сохраняем всё в cookies с правильными настройками для продакшена
     response.cookies.set('tootfm_user_id', userId, {
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production', // HTTPS на проде
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 30,
       domain: process.env.NODE_ENV === 'production' ? '.tootfm.world' : undefined
