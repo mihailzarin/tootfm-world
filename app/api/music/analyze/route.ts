@@ -299,6 +299,74 @@ export async function POST(request: NextRequest) {
           }
         }
 
+    // ===========================================
+    // 4. APPLE MUSIC - ПРЯМОЕ ПОЛУЧЕНИЕ ДАННЫХ
+    // ===========================================
+    
+    // Проверяем Apple Music token в клиентском запросе
+    const appleToken = request.headers.get("x-apple-token");
+    if (appleToken) {
+      console.log("🍎 Fetching Apple Music data directly...");
+      
+      try {
+        // Создаем временную секцию для Apple Music данных
+        const appleMusicData = {
+          tracks: [],
+          artists: [],
+          playlists: [],
+          recentlyPlayed: []
+        };
+        
+        // В реальном API здесь был бы запрос к Apple Music API
+        // Пока что обрабатываем данные из localStorage если переданы
+        const appleTracksFromStorage = request.headers.get("x-apple-tracks");
+        if (appleTracksFromStorage) {
+          try {
+            const parsedTracks = JSON.parse(decodeURIComponent(appleTracksFromStorage));
+            
+            // Нормализуем Apple Music треки к общему формату
+            const normalizedTracks = parsedTracks.map((track: any) => ({
+              name: track.name || track.title,
+              artist: track.artistName || track.artist,
+              artists: [{ name: track.artistName || track.artist }],
+              album: track.albumName || track.album,
+              duration: track.playbackDuration || track.duration,
+              genre: track.genreNames?.[0] || track.genre,
+              releaseDate: track.releaseDate,
+              source: "Apple Music",
+              appleMusicId: track.id
+            }));
+            
+            profile.topTracks!.push(...normalizedTracks.slice(0, 50));
+            profile.dataPoints! += normalizedTracks.length;
+            
+            // Извлекаем артистов
+            const appleArtists = [...new Set(normalizedTracks.map(t => t.artist))].
+              filter(Boolean).
+              map(name => ({
+                name,
+                source: "Apple Music"
+              }));
+            
+            profile.topArtists!.push(...appleArtists.slice(0, 30));
+            
+            // Извлекаем жанры
+            const appleGenres = normalizedTracks
+              .map(t => t.genre)
+              .filter(Boolean);
+            profile.topGenres!.push(...appleGenres);
+            
+            console.log(`✅ Processed ${normalizedTracks.length} tracks from Apple Music`);
+          } catch (parseError) {
+            console.error("❌ Error parsing Apple Music tracks:", parseError);
+          }
+        }
+        
+        profile.sources!.push("Apple Music");
+      } catch (error) {
+        console.error("❌ Error fetching Apple Music data:", error);
+      }
+    }
         // 2.3 Recent Tracks с timestamp для анализа паттернов
         const recentUrl = `https://ws.audioscrobbler.com/2.0/?method=user.getRecentTracks&user=${lastfmUsername}&api_key=${apiKey}&format=json&limit=200&extended=1`;
         const recentResponse = await fetch(recentUrl);
@@ -390,7 +458,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ===========================================
-    // 4. ПРОДВИНУТЫЙ АНАЛИЗ ДАННЫХ
+    // 5. ПРОДВИНУТЫЙ АНАЛИЗ ДАННЫХ
     // ===========================================
     
     // 4.1 Обработка жанров
@@ -475,11 +543,28 @@ function deduplicateLastfmTracks(tracks: any[]): any[] {
   const seen = new Map();
   
   tracks.forEach(track => {
-    const key = `${track.name}-${track.artist?.name || track.artist?.['#text'] || ''}`;
+    // Нормализуем artist - всегда делаем строкой
+    const artistName = typeof track.artist === 'string' 
+      ? track.artist 
+      : (track.artist?.name || track.artist?.['#text'] || 'Unknown Artist');
+    
+    const key = `${track.name}-${artistName}`;
     const playcount = parseInt(track.playcount) || 0;
     
     if (!seen.has(key) || playcount > seen.get(key).playcount) {
-      seen.set(key, { ...track, playcount });
+      // Приводим к формату совместимому со Spotify
+      const normalizedTrack = {
+        name: track.name,
+        artist: artistName,  // Всегда строка!
+        artists: [{ name: artistName }], // Массив как у Spotify
+        album: track.album?.['#text'] || track.album?.name || track.album,
+        playcount,
+        source: 'Last.fm',
+        url: track.url,
+        mbid: track.mbid
+      };
+      
+      seen.set(key, normalizedTrack);
     }
   });
   

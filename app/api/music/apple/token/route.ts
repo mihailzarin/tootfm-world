@@ -1,6 +1,6 @@
 // app/api/music/apple/token/route.ts
 import { NextResponse } from 'next/server';
-import { generateAppleMusicToken } from '@/lib/music-services/apple/token-generator';
+import { generateAppleMusicToken } from '@/src/lib/music-services/apple/token-generator';
 
 export async function GET() {
   try {

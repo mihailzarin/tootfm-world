@@ -75,14 +75,31 @@ export default function MusicPortrait({ userId }: { userId?: string }) {
     try {
       console.log('🎵 Starting music analysis...');
       
+      // Собираем Apple Music данные из localStorage
+      const appleToken = localStorage.getItem('apple_music_token');
+      const appleLibrary = localStorage.getItem('apple_music_library');
+      const applePlaylists = localStorage.getItem('apple_music_playlists');
+      
+      // Создаём headers с Apple Music данными
+      const headers: any = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (appleToken) {
+        headers['x-apple-token'] = appleToken;
+        console.log('🍎 Adding Apple Music token to request');
+      }
+      
+      if (appleLibrary) {
+        headers['x-apple-tracks'] = encodeURIComponent(appleLibrary);
+        console.log('🍎 Adding Apple Music library to request');
+      }
+      
       const response = await fetch('/api/music/analyze', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId: userId || 'current' }),
+        headers,
+        body: JSON.stringify({ userId: userId || 'current', deepAnalysis: true })
       });
-
       const data = await response.json();
       
       if (data.success && data.profile) {
@@ -154,7 +171,7 @@ export default function MusicPortrait({ userId }: { userId?: string }) {
           <h2 className="text-2xl font-bold text-white mb-2">Music Portrait</h2>
           {profile.sources && profile.sources.length > 0 && (
             <div className="flex items-center gap-2 text-sm text-gray-400">
-              <span>Данные из:</span>
+              <span>Data from:</span>
               {profile.sources.map((source, idx) => (
                 <span key={source} className="text-purple-400">
                   {source}
