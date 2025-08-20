@@ -107,7 +107,6 @@ export async function POST(
       recommendations.push(...spotifyRecs);
     }
 
-
     // 5. Дедупликация и сортировка
     recommendations = deduplicateAndSort(recommendations).slice(0, 30);
 
@@ -127,8 +126,6 @@ export async function POST(
         
         const saved = await prisma.track.create({
           data: {
-        const saved = await prisma.track.create({
-          data: {
             spotifyId: spotifyId,
             name: track.name,
             artist: track.artist,
@@ -145,7 +142,11 @@ export async function POST(
           ...saved,
           sources: track.sources,
           sourceCount: track.sourceCount
-        });        saveErrors.push({
+        });
+        
+      } catch (error) {
+        console.error(`❌ Failed to save: ${track.name}`, error);
+        saveErrors.push({
           track: `${track.name} - ${track.artist}`,
           error: error instanceof Error ? error.message : 'Unknown'
         });
@@ -184,7 +185,6 @@ export async function POST(
 // АНАЛИЗ УНИВЕРСАЛЬНЫХ ПРОФИЛЕЙ
 // ==========================================
 
-function analyzeUniversalProfiles(profiles: any[]): UniversalTrack[] {
 function analyzeUniversalProfiles(profiles: any[]): UniversalTrack[] {
   const trackMap = new Map<string, UniversalTrack>();
   console.log(`🔍 Analyzing ${profiles.length} profiles...`);
@@ -278,52 +278,6 @@ function analyzeUniversalProfiles(profiles: any[]): UniversalTrack[] {
   });
   
   return result;
-}          sourceId = track.isrc || track.id || '';
-        }
-
-        // Нормализуем ключ
-        const key = normalizeTrackKey(
-          track.name, 
-          track.artist || track.artists?.[0]?.name || 'Unknown'
-        );
-
-        // Добавляем или обновляем трек
-        if (!trackMap.has(key)) {
-          trackMap.set(key, {
-            name: track.name,
-            artist: track.artist || track.artists?.[0]?.name || 'Unknown',
-            album: track.album || track.album?.name,
-            sources: {},
-            matchScore: 0,
-            sourceCount: 0
-          });
-        }
-
-        const entry = trackMap.get(key)!;
-        
-        // Добавляем источник
-        if (source !== 'unknown' && sourceId) {
-          entry.sources[source] = sourceId;
-          entry.sourceCount = Object.keys(entry.sources).length;
-        }
-        
-        // Увеличиваем score
-        entry.matchScore += 10;
-      });
-    } catch (e) {
-      console.error('Error parsing tracks:', e);
-    }
-  });
-
-  // Конвертируем в массив и сортируем
-  return Array.from(trackMap.values())
-    .sort((a, b) => {
-      // Приоритет: треки из нескольких источников
-      if (a.sourceCount !== b.sourceCount) {
-        return b.sourceCount - a.sourceCount;
-      }
-      return b.matchScore - a.matchScore;
-    });
 }
 
 // ==========================================
@@ -456,44 +410,4 @@ function getSourceStats(tracks: any[]): any {
   });
   
   return stats;
-}
-
-function getDefaultTracks(): UniversalTrack[] {
-  return [
-    { 
-      name: "Blinding Lights", 
-      artist: "The Weeknd",
-      sources: { spotify: "0VjIjW4GlUZAMYd2vXMi3b" },
-      matchScore: 30,
-      sourceCount: 1
-    },
-    { 
-      name: "Levitating", 
-      artist: "Dua Lipa",
-      sources: { spotify: "6cx06DFPPHchuUAcTxznu9" },
-      matchScore: 28,
-      sourceCount: 1
-    },
-    { 
-      name: "Stay", 
-      artist: "The Kid LAROI, Justin Bieber",
-      sources: { spotify: "5PjdY0CKGZdEuoNab3yDmX" },
-      matchScore: 26,
-      sourceCount: 1
-    },
-    { 
-      name: "Heat Waves", 
-      artist: "Glass Animals",
-      sources: { spotify: "02MWAaffLxlfxAUY7c5dvx" },
-      matchScore: 24,
-      sourceCount: 1
-    },
-    { 
-      name: "Good 4 U", 
-      artist: "Olivia Rodrigo",
-      sources: { spotify: "4ZtFanR9U6ndgddUvNcjcG" },
-      matchScore: 22,
-      sourceCount: 1
-    }
-  ];
 }
