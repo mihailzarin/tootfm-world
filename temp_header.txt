@@ -1,0 +1,50 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Music, User, LogOut, Loader2 } from 'lucide-react';
+import SpotifyConnect from '@/components/SpotifyConnect';
+import LastFmConnect from '@/components/music-services/LastFmConnect';
+import MusicPortrait from '@/components/profile/MusicPortrait';
+
+export default function ProfilePage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState<any>(null);
+  const [spotifyUser, setSpotifyUser] = useState<any>(null);
+  const [lastfmUser, setLastfmUser] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('services');
+
+  useEffect(() => {
+    // Load user data
+    const worldId = localStorage.getItem('world_id');
+    const userDataStr = localStorage.getItem('user_data');
+    
+    if (userDataStr) {
+      try {
+        setUserData(JSON.parse(userDataStr));
+      } catch (e) {
+        console.error('Error parsing user data:', e);
+      }
+    } else if (worldId) {
+      setUserData({ worldId });
+    }
+
+    // Check Spotify
+    const spotifyUserCookie = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('spotify_user='));
+    
+    if (spotifyUserCookie) {
+      try {
+        const decoded = decodeURIComponent(spotifyUserCookie.split('=')[1]);
+        setSpotifyUser(JSON.parse(decoded));
+      } catch (e) {
+        console.error('Error parsing Spotify user:', e);
+      }
+    }
+
+    // Check Last.fm
+    const lastfmCookie = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('lastfm_username='));

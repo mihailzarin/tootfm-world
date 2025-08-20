@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Music, User, LogOut, Loader2 } from 'lucide-react';
 import SpotifyConnect from '@/components/SpotifyConnect';
 import LastFmConnect from '@/components/music-services/LastFmConnect';
+import CreatePartyButton from '@/components/CreatePartyButton';
+import AppleMusicConnect from '@/src/components/music-services/AppleMusicConnect';
 import MusicPortrait from '@/components/profile/MusicPortrait';
 
 export default function ProfilePage() {
@@ -13,6 +15,7 @@ export default function ProfilePage() {
   const [userData, setUserData] = useState<any>(null);
   const [spotifyUser, setSpotifyUser] = useState<any>(null);
   const [lastfmUser, setLastfmUser] = useState<string | null>(null);
+  const hasAnyService = spotifyConnected || lastfmConnected || localStorage.getItem('apple_music_token');
   const [activeTab, setActiveTab] = useState('services');
 
   useEffect(() => {
@@ -91,7 +94,7 @@ export default function ProfilePage() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.push('/my-parties')}
-              className="text-gray-300 hover:text-white transition"
+              className="bg-purple-600/20 hover:bg-purple-600/30 text-white font-medium py-2 px-6 rounded-lg transition"
             >
               My Parties
             </button>
@@ -192,6 +195,11 @@ export default function ProfilePage() {
                 ) : (
                   <LastFmConnect />
                 )}
+                
+                {/* Apple Music */}
+                <div className="mt-4">
+                  <AppleMusicConnect />
+                </div>
               </div>
             </div>
           )}
