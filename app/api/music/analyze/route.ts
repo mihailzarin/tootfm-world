@@ -1,6 +1,7 @@
 // app/api/music/analyze-v2/route.ts
 // УЛУЧШЕННАЯ ВЕРСИЯ с максимальным сбором данных
 
+import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from 'next/server';
 
 // Интерфейсы для типизации
@@ -491,6 +492,36 @@ export async function POST(request: NextRequest) {
       dataPoints: profile.dataPoints,
       sources: profile.sources
     });
+    // Сохраняем профиль в БД
+    console.log('💾 Saving music profile to database...');
+    try {
+      const savedProfile = await prisma.musicProfile.upsert({
+        where: { userId: userId || 'default' },
+        update: {
+          topGenres: JSON.stringify(profile.topGenres || []),
+          topArtists: JSON.stringify(profile.topArtists || []),
+          topTracks: JSON.stringify(profile.topTracks || []),
+          musicPersonality: profile.musicPersonality || 'Music Enthusiast',
+          energyLevel: profile.energyLevel || 50,
+          diversityScore: profile.diversityScore || 50,
+          lastUpdated: new Date()
+        },
+        create: {
+          userId: userId || 'default',
+          topGenres: JSON.stringify(profile.topGenres || []),
+          topArtists: JSON.stringify(profile.topArtists || []),
+          topTracks: JSON.stringify(profile.topTracks || []),
+          musicPersonality: profile.musicPersonality || 'Music Enthusiast',
+          energyLevel: profile.energyLevel || 50,
+          diversityScore: profile.diversityScore || 50
+        }
+      });
+      console.log('✅ Profile saved to database');
+    } catch (dbError) {
+      console.error('❌ Failed to save to database:', dbError);
+      // Продолжаем даже если БД недоступна
+    }
+
 
     return NextResponse.json({
       success: true,
