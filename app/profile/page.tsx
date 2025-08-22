@@ -216,7 +216,7 @@ export default function ProfilePage() {
           )}
 
           {activeTab === 'portrait' && (
-            <MusicPortrait userId={userData?.worldId || 'guest'} />
+            <MusicPortrait />
           )}
 
           {activeTab === 'stats' && (
