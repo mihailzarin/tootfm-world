@@ -1,8 +1,12 @@
 import './globals.css'
+import { Providers } from './providers'
 
 export const metadata = {
-  title: 'tootFM - Music Profile',
-  description: 'Your personal music profile',
+  title: 'tootFM - Revolutionary Party Playlists',
+  description: 'Create perfect party playlists by analyzing everyone\'s music taste with AI-powered recommendations',
+  keywords: 'music, playlist, party, spotify, lastfm, apple music, ai, recommendations',
+  authors: [{ name: 'tootFM Team' }],
+  viewport: 'width=device-width, initial-scale=1',
 }
 
 export default function RootLayout({
@@ -13,7 +17,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-purple-900">
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   )

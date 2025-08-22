@@ -1,156 +1,95 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { prisma } from "@/lib/prisma";
 
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL
-    }
-  }
-});
-
-function generatePartyCode(): string {
+function generateUniqueCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = '';
+  let result = '';
   for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return code;
+  return result;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    await prisma.$connect();
+    const session = await getServerSession();
     
-    const body = await request.json();
-    const { name, description, isPublic = false } = body;
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    console.log('Creating party:', { name });
-
-    // Получаем или создаём пользователя
-    let userId = request.cookies.get('tootfm_uid')?.value;
-    const worldId = body.worldId || request.headers.get('x-world-id') || `guest_${Date.now()}`;
-    
-    let user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { id: userId || '' },
-          { worldId: worldId }
-        ]
-      }
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
     });
 
     if (!user) {
-      user = await prisma.user.create({
-        data: {
-          worldId: worldId,
-          displayName: 'Party Host',
-          verified: true
-        }
-      });
-      console.log('Created new user:', user.id);
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const { name, description, maxMembers = 50, votingEnabled = false, partyRadio = false } = body;
+
+    if (!name || name.trim().length === 0) {
+      return NextResponse.json({ error: "Party name is required" }, { status: 400 });
     }
 
     // Генерируем уникальный код
-    let code = generatePartyCode();
+    let code: string;
+    let isUnique = false;
     let attempts = 0;
     
-    while (attempts < 10) {
-      const existing = await prisma.party.findUnique({
+    while (!isUnique && attempts < 10) {
+      code = generateUniqueCode();
+      const existingParty = await prisma.party.findUnique({
         where: { code }
       });
       
-      if (!existing) break;
-      
-      code = generatePartyCode();
-      attempts++;
+      if (!existingParty) {
+        isUnique = true;
+      } else {
+        attempts++;
+      }
     }
 
-    // Создаём party БЕЗ isPublic (используем isActive для публичности)
+    if (!isUnique) {
+      return NextResponse.json({ error: "Failed to generate unique party code" }, { status: 500 });
+    }
+
+    // Создаем вечеринку
     const party = await prisma.party.create({
       data: {
-        code,
-        name: name || `Party ${code}`,
-        description: description || '',
-        isActive: true, // Вместо isPublic используем isActive
-        creatorId: user.id
-      },
-      include: {
-        creator: {
-          select: {
-            id: true,
-            displayName: true,
-            worldId: true
-          }
-        },
-        _count: {
-          select: {
-            members: true,
-            tracks: true
-          }
-        }
+        code: code!,
+        name: name.trim(),
+        description: description?.trim() || null,
+        creatorId: user.id,
+        maxMembers,
+        votingEnabled,
+        partyRadio,
+        totalMembers: 1
       }
     });
 
-    console.log('Party created successfully:', party.code);
+    // Добавляем создателя как HOST
+    await prisma.partyMember.create({
+      data: {
+        partyId: party.id,
+        userId: user.id,
+        role: 'HOST'
+      }
+    });
 
-    const response = NextResponse.json({
+    return NextResponse.json({
       success: true,
       party: {
         id: party.id,
         code: party.code,
         name: party.name,
-        description: party.description,
-        isActive: party.isActive,
-        createdAt: party.createdAt,
-        memberCount: party._count.members,
-        trackCount: party._count.tracks,
-        creator: party.creator
+        shareUrl: `${process.env.NEXT_PUBLIC_APP_URL}/join/${party.code}`
       }
     });
-
-    if (user.id) {
-      response.cookies.set('tootfm_uid', user.id, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 30
-      });
-    }
-
-    response.cookies.set('last_party_code', party.code, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7
-    });
-
-    return response;
-
   } catch (error) {
-    console.error('Error creating party:', error);
-    
-    let errorMessage = 'Failed to create party';
-    
-    if (error instanceof Error) {
-      errorMessage = error.message;
-      
-      if (errorMessage.includes('P2002')) {
-        errorMessage = 'Party code already exists. Please try again.';
-      } else if (errorMessage.includes('P2021')) {
-        errorMessage = 'Database table not found.';
-      } else if (errorMessage.includes('P1001')) {
-        errorMessage = 'Cannot connect to database.';
-      }
-    }
-    
-    return NextResponse.json(
-      { 
-        error: errorMessage
-      },
-      { status: 500 }
-    );
-  } finally {
-    await prisma.$disconnect();
+    console.error("Error creating party:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

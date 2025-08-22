@@ -1,253 +1,224 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Music, Sparkles, Users, Lock, Globe, ArrowLeft, Loader2, ChevronRight } from 'lucide-react';
+import { useAuth } from "@/hooks/useAuth";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Music, Users, Shield, Radio, Settings, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 export default function CreatePartyPage() {
+  const { user, isAuthenticated, requireAuth } = useAuth();
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    isPublic: false
+    name: "",
+    description: "",
+    maxMembers: 50,
+    votingEnabled: false,
+    partyRadio: false
   });
+
+  if (!requireAuth()) {
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError(null);
+    setIsCreating(true);
 
     try {
-      // Получаем World ID из localStorage
-      const userData = localStorage.getItem('user_data');
-      let worldId = localStorage.getItem('world_id');
-      
-      if (userData && !worldId) {
-        try {
-          const parsed = JSON.parse(userData);
-          worldId = parsed.worldId;
-        } catch (e) {
-          console.error('Error parsing user data:', e);
-        }
-      }
-
-      // Подготавливаем данные
-      const requestBody = {
-        ...formData,
-        worldId: worldId // Добавляем World ID в body
-      };
-
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-      
-      // Добавляем World ID в headers если есть
-      if (worldId) {
-        headers['x-world-id'] = worldId;
-      }
-
-      console.log('Creating party with:', { worldId, name: formData.name });
-
       const response = await fetch('/api/party/create', {
         method: 'POST',
-        headers,
-        body: JSON.stringify(requestBody)
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
       });
 
-      const data = await response.json();
-
-      if (data.success) {
-        console.log('Party created successfully:', data.party.code);
-        // Сохраняем код последней party
-        localStorage.setItem('last_party_code', data.party.code);
-        // Переходим на страницу party
-        router.push(`/party/${data.party.code}`);
+      if (response.ok) {
+        const { party } = await response.json();
+        router.push(`/party/${party.code}`);
       } else {
-        throw new Error(data.error || 'Failed to create party');
+        const error = await response.json();
+        alert(error.error || 'Failed to create party');
       }
     } catch (error) {
       console.error('Error creating party:', error);
-      setError(error instanceof Error ? error.message : 'Failed to create party. Please try again.');
+      alert('Failed to create party');
     } finally {
-      setIsLoading(false);
+      setIsCreating(false);
     }
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
+    }));
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-purple-900 via-black to-purple-900">
-      {/* Header */}
-      <div className="border-b border-white/10 bg-black/20 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-8">
-            <button onClick={() => router.push('/')} className="flex items-center gap-2 hover:opacity-80 transition">
-              <Music className="w-6 h-6 text-purple-400" />
-              <span className="font-bold text-xl text-white">tootFM</span>
-            </button>
-          </div>
-          <button
-            onClick={() => router.back()}
-            className="text-gray-400 hover:text-white transition flex items-center gap-2"
+    <div className="min-h-screen py-8">
+      <div className="container mx-auto px-4 max-w-2xl">
+        {/* Header */}
+        <div className="mb-8">
+          <Link 
+            href="/profile"
+            className="inline-flex items-center gap-2 text-gray-300 hover:text-white transition mb-4"
           >
             <ArrowLeft className="w-4 h-4" />
-            Back
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="max-w-2xl mx-auto px-6 py-12">
-        {/* Header with animation */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-purple-600/30 to-pink-600/30 rounded-full mb-4 animate-pulse">
-            <Sparkles className="w-10 h-10 text-purple-400" />
-          </div>
-          <h1 className="text-4xl font-bold text-white mb-2">Create a Party</h1>
-          <p className="text-gray-400">Start a democratic music session where everyone's vote counts</p>
+            Back to Profile
+          </Link>
+          <h1 className="text-3xl font-bold text-white mb-2">Create a Party</h1>
+          <p className="text-gray-300">
+            Set up your party and start creating the perfect playlist together
+          </p>
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-6 bg-red-500/20 border border-red-500/50 rounded-xl p-4">
-            <p className="text-red-300 text-sm">{error}</p>
-          </div>
-        )}
-
+        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Party Name */}
-          <div className="bg-white/5 backdrop-blur rounded-2xl p-6 border border-white/10 hover:border-purple-500/30 transition">
-            <label className="block text-white font-medium mb-2">
-              Party Name <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Saturday Night Vibes"
-              className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400 transition"
-              required
-              maxLength={50}
-              disabled={isLoading}
-            />
-            <p className="text-gray-400 text-sm mt-2">
-              Give your party a memorable name (max 50 characters)
-            </p>
-          </div>
-
-          {/* Description */}
-          <div className="bg-white/5 backdrop-blur rounded-2xl p-6 border border-white/10 hover:border-purple-500/30 transition">
-            <label className="block text-white font-medium mb-2">
-              Description <span className="text-gray-500 text-sm">(Optional)</span>
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Let's create the perfect playlist together! Everyone gets one vote per track."
-              rows={3}
-              maxLength={200}
-              className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400 transition resize-none"
-              disabled={isLoading}
-            />
-            <p className="text-gray-400 text-sm mt-2">
-              Tell your guests what this party is about ({formData.description.length}/200)
-            </p>
-          </div>
-
-          {/* Privacy Settings */}
-          <div className="bg-white/5 backdrop-blur rounded-2xl p-6 border border-white/10 hover:border-purple-500/30 transition">
-            <label className="block text-white font-medium mb-4">
-              Privacy Settings
-            </label>
-            <div className="space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer group">
+          {/* Basic Info */}
+          <div className="bg-gradient-to-br from-purple-900/50 to-pink-900/50 rounded-2xl p-6 border border-purple-500/20">
+            <div className="flex items-center gap-3 mb-4">
+              <Music className="w-5 h-5 text-purple-400" />
+              <h2 className="text-xl font-bold text-white">Party Details</h2>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="name" className="block text-white font-medium mb-2">
+                  Party Name *
+                </label>
                 <input
-                  type="radio"
-                  name="privacy"
-                  checked={!formData.isPublic}
-                  onChange={() => setFormData({ ...formData, isPublic: false })}
-                  className="w-5 h-5 text-purple-600 focus:ring-purple-400"
-                  disabled={isLoading}
+                  type="text"
+                  id="name"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
+                  placeholder="Enter party name..."
                 />
-                <div className="flex items-center gap-2 flex-1">
-                  <Lock className="w-4 h-4 text-gray-400 group-hover:text-purple-400 transition" />
-                  <div className="flex-1">
-                    <span className="text-white font-medium">Private Party</span>
-                    <p className="text-gray-400 text-sm">Only people with the code can join</p>
-                  </div>
-                </div>
-              </label>
-              
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  type="radio"
-                  name="privacy"
-                  checked={formData.isPublic}
-                  onChange={() => setFormData({ ...formData, isPublic: true })}
-                  className="w-5 h-5 text-purple-600 focus:ring-purple-400"
-                  disabled={isLoading}
+              </div>
+
+              <div>
+                <label htmlFor="description" className="block text-white font-medium mb-2">
+                  Description
+                </label>
+                <textarea
+                  id="description"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  rows={3}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
+                  placeholder="Describe your party..."
                 />
-                <div className="flex items-center gap-2 flex-1">
-                  <Globe className="w-4 h-4 text-gray-400 group-hover:text-purple-400 transition" />
-                  <div className="flex-1">
-                    <span className="text-white font-medium">Public Party</span>
-                    <p className="text-gray-400 text-sm">Anyone can discover and join</p>
-                  </div>
-                </div>
-              </label>
+              </div>
+
+              <div>
+                <label htmlFor="maxMembers" className="block text-white font-medium mb-2">
+                  Max Members
+                </label>
+                <select
+                  id="maxMembers"
+                  name="maxMembers"
+                  value={formData.maxMembers}
+                  onChange={handleInputChange}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500"
+                >
+                  <option value={10}>10 members</option>
+                  <option value={20}>20 members</option>
+                  <option value={50}>50 members</option>
+                  <option value={100}>100 members</option>
+                </select>
+              </div>
             </div>
           </div>
 
-          {/* Features Info */}
-          <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-2xl p-6 border border-purple-500/30">
-            <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-              <Users className="w-5 h-5 text-purple-400" />
-              What Your Party Includes
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="flex items-start gap-2">
-                <ChevronRight className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
-                <span className="text-gray-300 text-sm">One vote per person (World ID verified)</span>
+          {/* Features */}
+          <div className="bg-gradient-to-br from-blue-900/50 to-cyan-900/50 rounded-2xl p-6 border border-blue-500/20">
+            <div className="flex items-center gap-3 mb-4">
+              <Settings className="w-5 h-5 text-blue-400" />
+              <h2 className="text-xl font-bold text-white">Party Features</h2>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Shield className="w-5 h-5 text-green-400" />
+                  <div>
+                    <h3 className="text-white font-medium">Democratic Voting</h3>
+                    <p className="text-gray-300 text-sm">Enable World ID voting for fair track selection</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="votingEnabled"
+                    checked={formData.votingEnabled}
+                    onChange={handleInputChange}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                </label>
               </div>
-              <div className="flex items-start gap-2">
-                <ChevronRight className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
-                <span className="text-gray-300 text-sm">Real-time voting updates</span>
+
+              <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Radio className="w-5 h-5 text-purple-400" />
+                  <div>
+                    <h3 className="text-white font-medium">Party Radio Mode</h3>
+                    <p className="text-gray-300 text-sm">AI-powered dynamic playlist that adapts to the party mood</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="partyRadio"
+                    checked={formData.partyRadio}
+                    onChange={handleInputChange}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                </label>
               </div>
-              <div className="flex items-start gap-2">
-                <ChevronRight className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
-                <span className="text-gray-300 text-sm">Multi-service support</span>
+            </div>
+          </div>
+
+          {/* Info Cards */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-gradient-to-br from-green-900/50 to-emerald-900/50 rounded-xl p-4 border border-green-500/20">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="w-4 h-4 text-green-400" />
+                <h3 className="text-white font-medium">How it works</h3>
               </div>
-              <div className="flex items-start gap-2">
-                <ChevronRight className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
-                <span className="text-gray-300 text-sm">Democratic queue system</span>
+              <p className="text-gray-300 text-sm">
+                Share the party code with friends. Everyone connects their music profiles and AI generates the perfect playlist.
+              </p>
+            </div>
+
+            <div className="bg-gradient-to-br from-orange-900/50 to-red-900/50 rounded-xl p-4 border border-orange-500/20">
+              <div className="flex items-center gap-2 mb-2">
+                <Music className="w-4 h-4 text-orange-400" />
+                <h3 className="text-white font-medium">Music Analysis</h3>
               </div>
+              <p className="text-gray-300 text-sm">
+                Our AI analyzes everyone's music taste from Spotify, Last.fm, and Apple Music to create the ultimate playlist.
+              </p>
             </div>
           </div>
 
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isLoading || !formData.name.trim()}
-            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 transform hover:scale-[1.02] active:scale-[0.98]"
+            disabled={isCreating}
+            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 text-white py-4 px-6 rounded-xl font-semibold text-lg transition-all duration-300"
           >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Creating Your Party...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-5 h-5" />
-                Create Party
-              </>
-            )}
+            {isCreating ? 'Creating Party...' : 'Create Party'}
           </button>
         </form>
-
-        {/* Tips */}
-        <div className="mt-8 text-center text-gray-400 text-sm">
-          <p>💡 Tip: You'll get a unique 6-character code to share with your guests</p>
-        </div>
       </div>
     </div>
   );
