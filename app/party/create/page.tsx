@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Music, Sparkles, Users, Lock, Globe, ArrowLeft, Loader2, ChevronRight } from 'lucide-react';
+import { getUserId } from '@/lib/auth/client-auth';
 
 export default function CreatePartyPage() {
   const router = useRouter();
@@ -20,35 +21,26 @@ export default function CreatePartyPage() {
     setError(null);
 
     try {
-      // Получаем World ID из localStorage
-      const userData = localStorage.getItem('user_data');
-      let worldId = localStorage.getItem('world_id');
+      // Get user ID from centralized auth
+      const userId = getUserId();
       
-      if (userData && !worldId) {
-        try {
-          const parsed = JSON.parse(userData);
-          worldId = parsed.worldId;
-        } catch (e) {
-          console.error('Error parsing user data:', e);
-        }
+      if (!userId) {
+        setError('Please sign in to create a party');
+        setIsLoading(false);
+        return;
       }
 
-      // Подготавливаем данные
+      // Prepare request data
       const requestBody = {
         ...formData,
-        worldId: worldId // Добавляем World ID в body
+        worldId: userId
       };
 
       const headers: HeadersInit = {
         'Content-Type': 'application/json'
       };
-      
-      // Добавляем World ID в headers если есть
-      if (worldId) {
-        headers['x-world-id'] = worldId;
-      }
 
-      console.log('Creating party with:', { worldId, name: formData.name });
+      console.log('Creating party with:', { userId, name: formData.name });
 
       const response = await fetch('/api/party/create', {
         method: 'POST',
@@ -60,9 +52,9 @@ export default function CreatePartyPage() {
 
       if (data.success) {
         console.log('Party created successfully:', data.party.code);
-        // Сохраняем код последней party
+        // Save last party code
         localStorage.setItem('last_party_code', data.party.code);
-        // Переходим на страницу party
+        // Navigate to party page
         router.push(`/party/${data.party.code}`);
       } else {
         throw new Error(data.error || 'Failed to create party');

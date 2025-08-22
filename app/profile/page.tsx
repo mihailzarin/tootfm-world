@@ -8,73 +8,87 @@ import LastFmConnect from '@/components/music-services/LastFmConnect';
 import CreatePartyButton from '@/components/CreatePartyButton';
 import AppleMusicConnect from '@/src/components/music-services/AppleMusicConnect';
 import MusicPortrait from '@/components/profile/MusicPortrait';
+import { checkAuthStatus, clearAuth, getSpotifyUser, getLastFmUsername, AuthUser } from '@/lib/auth/client-auth';
 
 export default function ProfilePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [userData, setUserData] = useState<any>(null);
+  const [userData, setUserData] = useState<AuthUser | null>(null);
   const [spotifyUser, setSpotifyUser] = useState<any>(null);
   const [lastfmUser, setLastfmUser] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('services');
 
   useEffect(() => {
-    // Load user data
-    const worldId = localStorage.getItem('world_id');
-    const userDataStr = localStorage.getItem('user_data');
-    
-    if (userDataStr) {
+    const loadUserData = async () => {
       try {
-        setUserData(JSON.parse(userDataStr));
-      } catch (e) {
-        console.error('Error parsing user data:', e);
+        // Check authentication status
+        const authUser = await checkAuthStatus();
+        if (!authUser) {
+          router.push('/login');
+          return;
+        }
+        
+        setUserData(authUser);
+
+        // Get Spotify user data
+        const spotifyData = getSpotifyUser();
+        if (spotifyData) {
+          setSpotifyUser(spotifyData);
+        }
+
+        // Get Last.fm username
+        const lastfmData = getLastFmUsername();
+        if (lastfmData) {
+          setLastfmUser(lastfmData);
+        }
+
+        setLoading(false);
+      } catch (error) {
+        console.error('Error loading user data:', error);
+        setLoading(false);
       }
-    } else if (worldId) {
-      setUserData({ worldId });
+    };
+
+    loadUserData();
+  }, [router]);
+
+  const handleSignOut = async () => {
+    try {
+      // Call logout API
+      await fetch('/api/auth/logout', { method: 'POST' });
+      
+      // Clear all local data
+      clearAuth();
+      
+      router.push('/');
+    } catch (error) {
+      console.error('Logout failed:', error);
     }
-
-    // Check Spotify
-    const spotifyUserCookie = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('spotify_user='));
-    
-    if (spotifyUserCookie) {
-      try {
-        const decoded = decodeURIComponent(spotifyUserCookie.split('=')[1]);
-        setSpotifyUser(JSON.parse(decoded));
-      } catch (e) {
-        console.error('Error parsing Spotify user:', e);
-      }
-    }
-
-    // Check Last.fm
-    const lastfmCookie = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('lastfm_username='));
-    
-    if (lastfmCookie) {
-      setLastfmUser(lastfmCookie.split('=')[1]);
-    }
-
-    setLoading(false);
-  }, []);
-
-  const handleSignOut = () => {
-    localStorage.clear();
-    document.cookie.split(";").forEach((c) => {
-      document.cookie = c
-        .replace(/^ +/, "")
-        .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-    });
-    router.push('/');
   };
 
-  // Check for connected services (client-side only)
+  // Check for connected services
   const hasAnyService = !!spotifyUser || !!lastfmUser || (typeof window !== 'undefined' && !!localStorage.getItem('apple_music_token'));
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-white animate-spin" />
+      </div>
+    );
+  }
+
+  if (!userData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-white mb-4">Not authenticated</p>
+          <button
+            onClick={() => router.push('/login')}
+            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition"
+          >
+            Sign In
+          </button>
+        </div>
       </div>
     );
   }
@@ -122,7 +136,7 @@ export default function ProfilePage() {
             <div className="flex-1">
               <h1 className="text-3xl font-bold text-white">Your Profile</h1>
               <p className="text-gray-400">
-                {userData?.worldId ? `World ID: ${userData.worldId.substring(0, 12)}...` : 'Guest User'}
+                {userData.displayName} • Level: {userData.level}
               </p>
               {/* Create Party Button */}
               {hasAnyService && (
@@ -180,7 +194,7 @@ export default function ProfilePage() {
                 </div>
                 {spotifyUser ? (
                   <div className="text-gray-400">
-                    <p>Logged in as: {spotifyUser.display_name || spotifyUser.id}</p>
+                    <p>Logged in as: {spotifyUser.name || spotifyUser.id}</p>
                     <p className="text-sm mt-1">Email: {spotifyUser.email}</p>
                   </div>
                 ) : (
@@ -216,7 +230,7 @@ export default function ProfilePage() {
           )}
 
           {activeTab === 'portrait' && (
-            <MusicPortrait userId={userData?.worldId || 'guest'} />
+            <MusicPortrait userId={userData.id} />
           )}
 
           {activeTab === 'stats' && (

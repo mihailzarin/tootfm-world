@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { Music, Users, Plus, Copy, Check, ArrowLeft, Loader2, Sparkles } from 'lucide-react';
 import PartyPlayer from '@/src/components/party/PartyPlayer';
+import { getUserId } from '@/lib/auth/client-auth';
 
 export default function PartyPage() {
   const params = useParams();
@@ -15,7 +16,7 @@ export default function PartyPage() {
   const [error, setError] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
   
-  // Новые состояния для генерации плейлиста
+  // States for playlist generation
   const [isGenerating, setIsGenerating] = useState(false);
   const [playlistGenerated, setPlaylistGenerated] = useState(false);
 
@@ -39,12 +40,8 @@ export default function PartyPage() {
       if (data.party) {
         setParty(data.party);
         
-        // Проверяем, является ли текущий пользователь хостом
-        const userId = document.cookie
-          .split('; ')
-          .find(row => row.startsWith('tootfm_uid='))
-          ?.split('=')[1];
-        
+        // Check if current user is the host
+        const userId = getUserId();
         setIsHost(data.party.creatorId === userId);
         setError(null);
       } else {
@@ -58,7 +55,7 @@ export default function PartyPage() {
     }
   };
 
-  // Функция генерации плейлиста из Music Portraits
+  // Generate playlist from Music Portraits
   const generatePlaylist = async () => {
     try {
       setIsGenerating(true);
@@ -77,11 +74,11 @@ export default function PartyPage() {
       const data = await response.json();
       console.log('Generated playlist:', data);
       
-      // Перезагружаем данные party чтобы получить новые треки
+      // Reload party data to get new tracks
       await fetchPartyData();
       setPlaylistGenerated(true);
       
-      // Показываем успех на 3 секунды
+      // Show success for 3 seconds
       setTimeout(() => setPlaylistGenerated(false), 3000);
       
     } catch (error) {
@@ -127,7 +124,7 @@ export default function PartyPage() {
     );
   }
 
-  // Используем реальные треки из БД или показываем заглушку
+  // Use real tracks from DB or show placeholder
   const hasRealTracks = party.tracks && party.tracks.length > 0;
   const displayTracks = hasRealTracks ? party.tracks : [
     {
@@ -219,7 +216,7 @@ export default function PartyPage() {
               </div>
             </div>
 
-            {/* Spotify Player - только если есть реальные треки */}
+            {/* Spotify Player - only if there are real tracks */}
             {hasRealTracks && (
               <PartyPlayer 
                 tracks={party.tracks}
@@ -275,7 +272,7 @@ export default function PartyPage() {
               {/* Tracks List */}
               <div className="space-y-3">
                 {!hasRealTracks ? (
-                  // Показываем сообщение если нет треков
+                  // Show message if no tracks
                   <div className="text-center py-12">
                     <Music className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                     <p className="text-gray-400 text-lg mb-2">No tracks in playlist yet</p>
@@ -287,7 +284,7 @@ export default function PartyPage() {
                     </p>
                   </div>
                 ) : (
-                  // Показываем реальные треки
+                  // Show real tracks
                   displayTracks
                     .sort((a: any, b: any) => (b.voteCount || 0) - (a.voteCount || 0))
                     .map((track: any, index: number) => (
@@ -331,7 +328,7 @@ export default function PartyPage() {
                 )}
               </div>
 
-              {/* Регенерация плейлиста для хоста если уже есть треки */}
+              {/* Regenerate playlist for host if tracks already exist */}
               {hasRealTracks && isHost && (
                 <div className="mt-6 pt-6 border-t border-white/10 text-center">
                   <p className="text-gray-500 text-sm mb-2">

@@ -1,14 +1,13 @@
 // app/api/spotify/token/route.ts
-// Endpoint для безопасного получения токена для Web Playback SDK
-
 import { NextRequest, NextResponse } from 'next/server';
+import { AUTH_CONFIG, getCookieOptions } from '@/lib/auth/config';
 
 export async function GET(request: NextRequest) {
   try {
-    // Получаем токен из httpOnly cookie
-    const spotifyToken = request.cookies.get('spotify_token')?.value;
-    const spotifyExpires = request.cookies.get('spotify_expires')?.value;
-    const spotifyRefresh = request.cookies.get('spotify_refresh')?.value;
+    // Get tokens from cookies using centralized names
+    const spotifyToken = request.cookies.get(AUTH_CONFIG.COOKIES.SPOTIFY_TOKEN)?.value;
+    const spotifyExpires = request.cookies.get(AUTH_CONFIG.COOKIES.SPOTIFY_EXPIRES)?.value;
+    const spotifyRefresh = request.cookies.get(AUTH_CONFIG.COOKIES.SPOTIFY_REFRESH)?.value;
     
     if (!spotifyToken) {
       return NextResponse.json({
@@ -17,13 +16,13 @@ export async function GET(request: NextRequest) {
       }, { status: 401 });
     }
     
-    // Проверяем, не истек ли токен
+    // Check if token is expiring soon
     if (spotifyExpires) {
       const expiresAt = new Date(spotifyExpires);
       const now = new Date();
       const minutesLeft = Math.floor((expiresAt.getTime() - now.getTime()) / 1000 / 60);
       
-      // Если токен истекает в ближайшие 5 минут, обновляем его
+      // Refresh token if it expires in the next 5 minutes
       if (minutesLeft < 5 && spotifyRefresh) {
         console.log('🔄 Token expiring soon, auto-refreshing...');
         
@@ -45,44 +44,44 @@ export async function GET(request: NextRequest) {
         if (refreshResponse.ok) {
           const data = await refreshResponse.json();
           
-          // Создаем response с новым токеном
+          // Create response with new token
           const response = NextResponse.json({
             token: data.access_token,
             expiresIn: data.expires_in
           });
           
-          // Обновляем cookies
-          response.cookies.set('spotify_token', data.access_token, {
-            httpOnly: true,
-            secure: true,
-            sameSite: 'lax',
-            maxAge: data.expires_in || 3600
+          // Update cookies with new token
+          response.cookies.set(AUTH_CONFIG.COOKIES.SPOTIFY_TOKEN, data.access_token, {
+            ...getCookieOptions(true),
+            maxAge: data.expires_in || AUTH_CONFIG.EXPIRATION.ACCESS_TOKEN
           });
           
           const newExpiresAt = new Date(Date.now() + (data.expires_in * 1000));
-          response.cookies.set('spotify_expires', newExpiresAt.toISOString(), {
-            httpOnly: false,
-            secure: true,
-            sameSite: 'lax',
-            maxAge: data.expires_in || 3600
+          response.cookies.set(AUTH_CONFIG.COOKIES.SPOTIFY_EXPIRES, newExpiresAt.toISOString(), {
+            ...getCookieOptions(false),
+            maxAge: data.expires_in || AUTH_CONFIG.EXPIRATION.ACCESS_TOKEN
           });
           
           if (data.refresh_token) {
-            response.cookies.set('spotify_refresh', data.refresh_token, {
-              httpOnly: true,
-              secure: true,
-              sameSite: 'lax',
-              maxAge: 60 * 60 * 24 * 365
+            response.cookies.set(AUTH_CONFIG.COOKIES.SPOTIFY_REFRESH, data.refresh_token, {
+              ...getCookieOptions(true),
+              maxAge: AUTH_CONFIG.EXPIRATION.REFRESH_TOKEN
             });
           }
           
           console.log('✅ Token refreshed successfully');
           return response;
+        } else {
+          console.error('❌ Failed to refresh token');
+          return NextResponse.json({
+            error: 'Token refresh failed',
+            requiresAuth: true
+          }, { status: 401 });
         }
       }
     }
     
-    // Возвращаем текущий токен
+    // Return current token
     return NextResponse.json({
       token: spotifyToken,
       expiresAt: spotifyExpires || null

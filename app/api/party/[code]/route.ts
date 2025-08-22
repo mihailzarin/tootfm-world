@@ -1,8 +1,9 @@
 // app/api/party/[code]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { AUTH_CONFIG, getCookieOptions } from '@/lib/auth/config';
 
-// GET - получить информацию о party
+// GET - get party information
 export async function GET(
   request: NextRequest,
   { params }: { params: { code: string } }
@@ -61,13 +62,13 @@ export async function GET(
   }
 }
 
-// POST - создать новую party
+// POST - create new party
 export async function POST(request: NextRequest) {
   try {
     console.log('🎉 Creating new party...');
     
-    // Получаем userId из cookies
-    const userCookieId = request.cookies.get('tootfm_user_id')?.value;
+    // Get user ID from cookies using centralized configuration
+    const userCookieId = request.cookies.get(AUTH_CONFIG.COOKIES.USER_ID)?.value;
     
     if (!userCookieId) {
       console.error('❌ No user cookie found');
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     console.log('🔍 Looking for user with worldId:', userCookieId);
 
-    // Находим или создаём пользователя в БД
+    // Find or create user in database
     let user = await prisma.user.findUnique({
       where: { worldId: userCookieId }
     });
@@ -86,8 +87,8 @@ export async function POST(request: NextRequest) {
     if (!user) {
       console.log('👤 User not found, creating new user...');
       
-      // Получаем данные из cookie
-      const googleUserCookie = request.cookies.get('google_user')?.value;
+      // Get data from cookie
+      const googleUserCookie = request.cookies.get(AUTH_CONFIG.COOKIES.GOOGLE_USER)?.value;
       let googleUser = null;
       
       if (googleUserCookie) {
@@ -99,7 +100,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Создаём пользователя
+      // Create user
       user = await prisma.user.create({
         data: {
           worldId: userCookieId,
@@ -107,7 +108,8 @@ export async function POST(request: NextRequest) {
           email: googleUser?.email,
           displayName: googleUser?.name || 'Party Host',
           avatar: googleUser?.picture,
-          verified: true
+          verified: true,
+          level: 'verified'
         }
       });
       console.log('✅ User created:', user.id);
@@ -115,7 +117,7 @@ export async function POST(request: NextRequest) {
       console.log('✅ Found existing user:', user.id);
     }
 
-    // Получаем код из тела запроса
+    // Get code from request body
     const body = await request.json();
     const { code } = body;
 
@@ -125,7 +127,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Проверяем, не занят ли код
+    // Check if code is already taken
     const existingParty = await prisma.party.findUnique({
       where: { code: code.toUpperCase() }
     });
@@ -136,7 +138,7 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    // Создаём party
+    // Create party
     const party = await prisma.party.create({
       data: {
         code: code.toUpperCase(),
@@ -175,14 +177,14 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT - обновить party (присоединиться к party)
+// PUT - join party
 export async function PUT(
   request: NextRequest,
   { params }: { params: { code: string } }
 ) {
   try {
     const { code } = params;
-    const userCookieId = request.cookies.get('tootfm_user_id')?.value;
+    const userCookieId = request.cookies.get(AUTH_CONFIG.COOKIES.USER_ID)?.value;
     
     if (!userCookieId) {
       return NextResponse.json({ 
@@ -190,20 +192,22 @@ export async function PUT(
       }, { status: 401 });
     }
 
-    // Находим пользователя
+    // Find user
     let user = await prisma.user.findUnique({
       where: { worldId: userCookieId }
     });
 
     if (!user) {
-      // Создаём пользователя если его нет
-      const googleUserCookie = request.cookies.get('google_user')?.value;
+      // Create user if not exists
+      const googleUserCookie = request.cookies.get(AUTH_CONFIG.COOKIES.GOOGLE_USER)?.value;
       let googleUser = null;
       
       if (googleUserCookie) {
         try {
           googleUser = JSON.parse(googleUserCookie);
-        } catch (e) {}
+        } catch (e) {
+          console.error('Failed to parse google_user cookie');
+        }
       }
 
       user = await prisma.user.create({
@@ -213,12 +217,13 @@ export async function PUT(
           email: googleUser?.email,
           displayName: googleUser?.name || 'Party Guest',
           avatar: googleUser?.picture,
-          verified: true
+          verified: true,
+          level: 'verified'
         }
       });
     }
 
-    // Находим party
+    // Find party
     const party = await prisma.party.findUnique({
       where: { code: code.toUpperCase() }
     });
@@ -230,7 +235,7 @@ export async function PUT(
       );
     }
 
-    // Проверяем, не является ли пользователь уже участником
+    // Check if user is already a member
     const existingMember = await prisma.partyMember.findUnique({
       where: {
         userId_partyId: {
@@ -248,7 +253,7 @@ export async function PUT(
       });
     }
 
-    // Добавляем участника
+    // Add member
     await prisma.partyMember.create({
       data: {
         userId: user.id,
@@ -259,7 +264,7 @@ export async function PUT(
 
     console.log('✅ User', user.displayName, 'joined party', party.code);
 
-    // Возвращаем обновлённую party
+    // Return updated party
     const updatedParty = await prisma.party.findUnique({
       where: { code: code.toUpperCase() },
       include: {
@@ -287,14 +292,14 @@ export async function PUT(
   }
 }
 
-// DELETE - удалить party
+// DELETE - delete party
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { code: string } }
 ) {
   try {
     const { code } = params;
-    const userCookieId = request.cookies.get('tootfm_user_id')?.value;
+    const userCookieId = request.cookies.get(AUTH_CONFIG.COOKIES.USER_ID)?.value;
     
     if (!userCookieId) {
       return NextResponse.json({ 
@@ -302,7 +307,7 @@ export async function DELETE(
       }, { status: 401 });
     }
 
-    // Находим пользователя
+    // Find user
     const user = await prisma.user.findUnique({
       where: { worldId: userCookieId }
     });
@@ -313,7 +318,7 @@ export async function DELETE(
       }, { status: 404 });
     }
 
-    // Находим party
+    // Find party
     const party = await prisma.party.findUnique({
       where: { code: code.toUpperCase() }
     });
@@ -325,7 +330,7 @@ export async function DELETE(
       );
     }
 
-    // Проверяем, является ли пользователь создателем
+    // Check if user is the creator
     if (party.creatorId !== user.id) {
       return NextResponse.json(
         { error: 'Only the party creator can delete it' },
@@ -333,7 +338,7 @@ export async function DELETE(
       );
     }
 
-    // Удаляем party (связанные записи удалятся каскадно)
+    // Delete party (cascade will handle related records)
     await prisma.party.delete({
       where: { id: party.id }
     });

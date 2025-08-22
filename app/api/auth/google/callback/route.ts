@@ -2,13 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { prisma } from '@/lib/prisma';
+import { AUTH_CONFIG, getRedirectUrl, getCookieOptions } from '@/lib/auth/config';
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  process.env.NODE_ENV === 'production'
-    ? 'https://tootfm.world/api/auth/google/callback'
-    : 'http://localhost:3001/api/auth/google/callback'
+  getRedirectUrl('google')
 );
 
 export async function GET(request: NextRequest) {
@@ -18,8 +17,10 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const code = searchParams.get('code');
     const error = searchParams.get('error');
+    const state = searchParams.get('state');
     
     if (error) {
+      console.error('❌ Google OAuth error:', error);
       const redirectUrl = process.env.NODE_ENV === 'production'
         ? 'https://tootfm.world/login?error=cancelled'
         : 'http://localhost:3001/login?error=cancelled';
@@ -27,25 +28,26 @@ export async function GET(request: NextRequest) {
     }
     
     if (!code) {
+      console.error('❌ No authorization code received');
       const redirectUrl = process.env.NODE_ENV === 'production'
         ? 'https://tootfm.world/login?error=no_code'
         : 'http://localhost:3001/login?error=no_code';
       return NextResponse.redirect(redirectUrl);
     }
 
-    // Обмениваем code на токены
+    // Exchange code for tokens
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
 
-    // Получаем данные пользователя
+    // Get user data from Google
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const { data } = await oauth2.userinfo.get();
-    console.log('✅ User:', data.email);
+    console.log('✅ Google user:', data.email);
 
-    // ВАЖНО: Создаём или находим пользователя в БД
+    // Generate unique user ID
     const userId = `google_${data.id}`;
     
-    // Находим или создаём пользователя в БД
+    // Find or create user in database
     let dbUser = await prisma.user.findUnique({
       where: { worldId: userId }
     });
@@ -59,57 +61,53 @@ export async function GET(request: NextRequest) {
           email: data.email,
           displayName: data.name || 'User',
           avatar: data.picture,
-          verified: true
+          verified: true,
+          level: 'verified'
         }
       });
       console.log('✅ User created:', dbUser.id);
     } else {
       console.log('✅ Found existing user:', dbUser.id);
-      // Обновляем данные если нужно
+      // Update user data if needed
       await prisma.user.update({
         where: { id: dbUser.id },
         data: {
           email: data.email,
           displayName: data.name || dbUser.displayName,
-          avatar: data.picture || dbUser.avatar
+          avatar: data.picture || dbUser.avatar,
+          lastLogin: new Date()
         }
       });
     }
     
-    // Правильный redirect URL для продакшена
+    // Redirect to profile page
     const profileUrl = process.env.NODE_ENV === 'production'
       ? 'https://tootfm.world/profile'
       : 'http://localhost:3001/profile';
       
     const response = NextResponse.redirect(profileUrl);
     
-    // Сохраняем всё в cookies с правильными настройками для продакшена
-    response.cookies.set('tootfm_user_id', userId, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30,
-      domain: process.env.NODE_ENV === 'production' ? '.tootfm.world' : undefined
+    // Set cookies with proper configuration
+    response.cookies.set(AUTH_CONFIG.COOKIES.USER_ID, userId, {
+      ...getCookieOptions(true),
+      maxAge: AUTH_CONFIG.EXPIRATION.SESSION
     });
 
-    response.cookies.set('google_user', JSON.stringify({
+    response.cookies.set(AUTH_CONFIG.COOKIES.GOOGLE_USER, JSON.stringify({
       id: data.id,
       email: data.email,
       name: data.name,
       picture: data.picture
     }), {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30,
-      domain: process.env.NODE_ENV === 'production' ? '.tootfm.world' : undefined
+      ...getCookieOptions(false),
+      maxAge: AUTH_CONFIG.EXPIRATION.SESSION
     });
 
-    console.log('✅ Success! Redirecting to profile');
+    console.log('✅ Google authentication successful! Redirecting to profile');
     return response;
 
   } catch (error: any) {
-    console.error('❌ ERROR:', error.message);
+    console.error('❌ Google callback error:', error.message);
     const errorUrl = process.env.NODE_ENV === 'production'
       ? 'https://tootfm.world/login?error=auth_failed'
       : 'http://localhost:3001/login?error=auth_failed';

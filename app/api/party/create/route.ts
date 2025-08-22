@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { AUTH_CONFIG, getCookieOptions } from '@/lib/auth/config';
 
 const prisma = new PrismaClient({
   datasources: {
@@ -25,12 +26,27 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name, description, isPublic = false } = body;
 
+    if (!name || name.trim().length === 0) {
+      return NextResponse.json(
+        { error: 'Party name is required' },
+        { status: 400 }
+      );
+    }
+
+    if (name.length > 50) {
+      return NextResponse.json(
+        { error: 'Party name must be 50 characters or less' },
+        { status: 400 }
+      );
+    }
+
     console.log('Creating party:', { name });
 
-    // Получаем или создаём пользователя
-    let userId = request.cookies.get('tootfm_uid')?.value;
+    // Get user ID from cookies using centralized configuration
+    let userId = request.cookies.get(AUTH_CONFIG.COOKIES.USER_ID)?.value;
     const worldId = body.worldId || request.headers.get('x-world-id') || `guest_${Date.now()}`;
     
+    // Find or create user
     let user = await prisma.user.findFirst({
       where: {
         OR: [
@@ -45,17 +61,19 @@ export async function POST(request: NextRequest) {
         data: {
           worldId: worldId,
           displayName: 'Party Host',
-          verified: true
+          verified: false,
+          level: 'guest'
         }
       });
       console.log('Created new user:', user.id);
     }
 
-    // Генерируем уникальный код
+    // Generate unique party code
     let code = generatePartyCode();
     let attempts = 0;
+    const maxAttempts = 10;
     
-    while (attempts < 10) {
+    while (attempts < maxAttempts) {
       const existing = await prisma.party.findUnique({
         where: { code }
       });
@@ -66,13 +84,20 @@ export async function POST(request: NextRequest) {
       attempts++;
     }
 
-    // Создаём party БЕЗ isPublic (используем isActive для публичности)
+    if (attempts >= maxAttempts) {
+      return NextResponse.json(
+        { error: 'Failed to generate unique party code. Please try again.' },
+        { status: 500 }
+      );
+    }
+
+    // Create party
     const party = await prisma.party.create({
       data: {
         code,
-        name: name || `Party ${code}`,
-        description: description || '',
-        isActive: true, // Вместо isPublic используем isActive
+        name: name.trim(),
+        description: description?.trim() || '',
+        isActive: true,
         creatorId: user.id
       },
       include: {
@@ -109,20 +134,18 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    if (user.id) {
-      response.cookies.set('tootfm_uid', user.id, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 30
+    // Set user ID cookie if not already set
+    if (user.id && !userId) {
+      response.cookies.set(AUTH_CONFIG.COOKIES.USER_ID, user.id, {
+        ...getCookieOptions(true),
+        maxAge: AUTH_CONFIG.EXPIRATION.SESSION
       });
     }
 
+    // Set last party code cookie
     response.cookies.set('last_party_code', party.code, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7
+      ...getCookieOptions(false),
+      maxAge: 60 * 60 * 24 * 7 // 7 days
     });
 
     return response;
@@ -145,9 +168,7 @@ export async function POST(request: NextRequest) {
     }
     
     return NextResponse.json(
-      { 
-        error: errorMessage
-      },
+      { error: errorMessage },
       { status: 500 }
     );
   } finally {

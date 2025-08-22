@@ -1,8 +1,9 @@
 // lib/auth/server-auth.ts
-// Server-side auth functions (use cookies)
+// Server-side authentication utilities
 
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
+import { AUTH_CONFIG, getCookieOptions, UserLevel } from './config';
 
 export interface TootUser {
   id: string;
@@ -10,7 +11,7 @@ export interface TootUser {
   displayName: string;
   avatar?: string;
   email?: string;
-  level: 'guest' | 'music' | 'verified';
+  level: UserLevel;
   services: {
     spotify?: { id: string; email?: string; connected: Date };
     lastfm?: { username: string; connected: Date };
@@ -27,7 +28,7 @@ export interface TootUser {
 export async function getCurrentUser(): Promise<TootUser | null> {
   try {
     const cookieStore = await cookies();
-    const userId = cookieStore.get('tootfm_uid')?.value;
+    const userId = cookieStore.get(AUTH_CONFIG.COOKIES.USER_ID)?.value;
     
     if (!userId) {
       return null;
@@ -94,6 +95,7 @@ export async function findOrCreateUserByService(
   if (existingService) {
     console.log(`Found existing user via ${service}:`, existingService.user.displayName);
     
+    // Update service tokens
     await prisma.musicService.update({
       where: { id: existingService.id },
       data: {
@@ -104,9 +106,13 @@ export async function findOrCreateUserByService(
       }
     });
     
+    // Update user last seen
     await prisma.user.update({
       where: { id: existingService.user.id },
-      data: { updatedAt: new Date() }
+      data: { 
+        updatedAt: new Date(),
+        lastLogin: new Date()
+      }
     });
     
     await saveUserSession(existingService.user.id);
@@ -167,18 +173,9 @@ function generatePrimaryId(): string {
 async function saveUserSession(userId: string): Promise<void> {
   const cookieStore = await cookies();
   
-  cookieStore.set('tootfm_uid', userId, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 365
-  });
-  
-  cookieStore.set('tootfm_user', userId, {
-    httpOnly: false,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 365
+  cookieStore.set(AUTH_CONFIG.COOKIES.USER_ID, userId, {
+    ...getCookieOptions(true),
+    maxAge: AUTH_CONFIG.EXPIRATION.SESSION
   });
 }
 
@@ -195,7 +192,7 @@ function formatUser(dbUser: any): TootUser {
     };
   });
   
-  let level: TootUser['level'] = 'guest';
+  let level: UserLevel = 'guest';
   if (dbUser.verified && dbUser.worldId && !dbUser.worldId.startsWith('temp_')) {
     level = 'verified';
   } else if (dbUser.musicServices?.length > 0) {

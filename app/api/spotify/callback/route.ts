@@ -1,33 +1,33 @@
 // app/api/spotify/callback/route.ts
-// Updated Spotify callback with user creation/login
-
 import { NextRequest, NextResponse } from "next/server";
 import { findOrCreateUserByService } from "@/lib/auth/server-auth";
+import { AUTH_CONFIG, getRedirectUrl, getCookieOptions } from "@/lib/auth/config";
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const code = searchParams.get("code");
-  const error = searchParams.get("error");
-
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://tootfm.world';
-
-  if (error) {
-    console.error('❌ Spotify auth error:', error);
-    return NextResponse.redirect(`${baseUrl}/?error=spotify_denied`);
-  }
-
-  if (!code) {
-    console.error('❌ No code in Spotify callback');
-    return NextResponse.redirect(`${baseUrl}/?error=no_code`);
-  }
-
   try {
+    const searchParams = request.nextUrl.searchParams;
+    const code = searchParams.get("code");
+    const error = searchParams.get("error");
+    const state = searchParams.get("state");
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://tootfm.world';
+
+    if (error) {
+      console.error('❌ Spotify auth error:', error);
+      return NextResponse.redirect(`${baseUrl}/?error=spotify_denied`);
+    }
+
+    if (!code) {
+      console.error('❌ No code in Spotify callback');
+      return NextResponse.redirect(`${baseUrl}/?error=no_code`);
+    }
+
     console.log('🎵 Processing Spotify callback...');
     
     // Get token from Spotify
     const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID!;
     const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET!;
-    const REDIRECT_URI = `${baseUrl}/api/spotify/callback`;
+    const REDIRECT_URI = getRedirectUrl('spotify');
     
     const tokenResponse = await fetch("https://accounts.spotify.com/api/token", {
       method: "POST",
@@ -84,31 +84,22 @@ export async function GET(request: NextRequest) {
     // Create response with redirect
     const response = NextResponse.redirect(`${baseUrl}/profile?welcome=true`);
 
-    // Save Spotify tokens in cookies (for music playback)
-    response.cookies.set("spotify_token", tokenData.access_token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      maxAge: tokenData.expires_in || 3600,
-      path: "/"
+    // Save Spotify tokens in cookies
+    response.cookies.set(AUTH_CONFIG.COOKIES.SPOTIFY_TOKEN, tokenData.access_token, {
+      ...getCookieOptions(true),
+      maxAge: tokenData.expires_in || AUTH_CONFIG.EXPIRATION.ACCESS_TOKEN
     });
     
     if (tokenData.refresh_token) {
-      response.cookies.set("spotify_refresh", tokenData.refresh_token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 365,
-        path: "/"
+      response.cookies.set(AUTH_CONFIG.COOKIES.SPOTIFY_REFRESH, tokenData.refresh_token, {
+        ...getCookieOptions(true),
+        maxAge: AUTH_CONFIG.EXPIRATION.REFRESH_TOKEN
       });
     }
 
-    response.cookies.set("spotify_expires", expiresAt.toISOString(), {
-      httpOnly: false,
-      secure: true,
-      sameSite: "lax",
-      maxAge: tokenData.expires_in || 3600,
-      path: "/"
+    response.cookies.set(AUTH_CONFIG.COOKIES.SPOTIFY_EXPIRES, expiresAt.toISOString(), {
+      ...getCookieOptions(false),
+      maxAge: tokenData.expires_in || AUTH_CONFIG.EXPIRATION.ACCESS_TOKEN
     });
 
     // Save user data for UI
@@ -121,12 +112,9 @@ export async function GET(request: NextRequest) {
       country: profileData.country
     };
     
-    response.cookies.set("spotify_user", JSON.stringify(userData), {
-      httpOnly: false,
-      secure: true,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30,
-      path: "/"
+    response.cookies.set(AUTH_CONFIG.COOKIES.SPOTIFY_USER, JSON.stringify(userData), {
+      ...getCookieOptions(false),
+      maxAge: AUTH_CONFIG.EXPIRATION.SESSION
     });
 
     console.log('🎉 Spotify login complete!');
@@ -134,6 +122,7 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error("❌ Spotify callback error:", error);
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://tootfm.world';
     return NextResponse.redirect(`${baseUrl}/?error=server_error`);
   }
 }

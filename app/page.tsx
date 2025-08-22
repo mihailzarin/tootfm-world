@@ -3,33 +3,23 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Music, Users, Zap, ArrowRight, Globe, Sparkles, Shield } from 'lucide-react';
+import { checkAuthStatus, clearAuth, AuthUser } from '@/lib/auth/client-auth';
 
 export default function HomePage() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userName, setUserName] = useState<string | null>(null);
+  const [userData, setUserData] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  const checkAuthStatus = async () => {
-    try {
-      // Check for Google/main auth
-      const response = await fetch('/api/auth/check');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.authenticated) {
-          setIsLoggedIn(true);
-          // Try to get user name from localStorage or cookies
-          const savedName = localStorage.getItem('user_display_name');
-          if (savedName) setUserName(savedName);
-        }
+    checkAuthStatus().then((user) => {
+      if (user) {
+        setIsLoggedIn(true);
+        setUserData(user);
       }
-    } catch (error) {
-      console.error('Auth check failed:', error);
-    }
-  };
+      setIsLoading(false);
+    });
+  }, []);
 
   const handleSignOut = async () => {
     try {
@@ -37,22 +27,26 @@ export default function HomePage() {
       await fetch('/api/auth/logout', { method: 'POST' });
       
       // Clear all local data
-      localStorage.clear();
-      
-      // Clear cookies
-      document.cookie.split(";").forEach((c) => {
-        document.cookie = c
-          .replace(/^ +/, "")
-          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-      });
+      clearAuth();
       
       setIsLoggedIn(false);
-      setUserName(null);
+      setUserData(null);
       router.push('/');
     } catch (error) {
       console.error('Logout failed:', error);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-purple-900 via-black to-purple-900 flex items-center justify-center">
+        <div className="text-center">
+          <Music className="w-12 h-12 text-purple-400 animate-spin mx-auto mb-4" />
+          <p className="text-white">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 via-black to-purple-900">
