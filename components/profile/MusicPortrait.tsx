@@ -49,8 +49,8 @@ interface MusicProfile {
 }
 
 interface ServiceData {
-  tracks?: { items?: Track[] };
-  artists?: { items?: Artist[] };
+  tracks?: Track[] | { items?: Track[] };
+  artists?: Artist[] | { items?: Artist[] };
   recentTracks?: Track[];
   topArtists?: Artist[];
 }
@@ -164,23 +164,31 @@ export default function MusicPortrait() {
     if (spotify) {
       combined.sources.push('Spotify');
       
+      // Обрабатываем треки - они могут быть в разных форматах
+      let spotifyTracks: Track[] = [];
+      if (Array.isArray(spotify.tracks)) {
+        spotifyTracks = spotify.tracks;
+      } else if (spotify.tracks?.items) {
+        spotifyTracks = spotify.tracks.items;
+      }
+      
       // Добавляем треки
-      if (spotify.tracks?.items) {
-        combined.topTracks.push(...spotify.tracks.items.map((t: Track) => ({
+      if (spotifyTracks.length > 0) {
+        combined.topTracks.push(...spotifyTracks.map((t: Track) => ({
           ...t,
           source: 'Spotify'
         })));
         
         // Извлекаем артистов из треков
-        spotify.tracks.items.forEach((track: Track) => {
+        spotifyTracks.forEach((track: Track) => {
           if (track.artists && track.artists.length > 0) {
             track.artists.forEach((artist) => {
               if (!artistMap.has(artist.name)) {
                 artistMap.set(artist.name, {
                   name: artist.name,
                   source: 'Spotify',
-                  genres: [], // Жанры будут добавлены из отдельного запроса артистов
-                  popularity: 50 // Дефолтное значение
+                  genres: [],
+                  popularity: 50
                 });
               }
             });
@@ -188,9 +196,17 @@ export default function MusicPortrait() {
         });
       }
       
-      // Если есть отдельный список артистов - используем его (он перезапишет базовые данные)
-      if (spotify.artists?.items) {
-        spotify.artists.items.forEach((artist: Artist) => {
+      // Обрабатываем артистов - они тоже могут быть в разных форматах
+      let spotifyArtists: Artist[] = [];
+      if (Array.isArray(spotify.artists)) {
+        spotifyArtists = spotify.artists;
+      } else if (spotify.artists?.items) {
+        spotifyArtists = spotify.artists.items;
+      }
+      
+      // Добавляем/обновляем артистов из отдельного списка
+      if (spotifyArtists.length > 0) {
+        spotifyArtists.forEach((artist: Artist) => {
           artistMap.set(artist.name, {
             ...artist,
             source: 'Spotify'
@@ -203,28 +219,24 @@ export default function MusicPortrait() {
       combined.sources.push('Last.fm');
       
       // Добавляем треки
-      if (lastfm.recentTracks) {
-        const lastfmTracks = lastfm.recentTracks.map((t: Track) => ({
-          name: t.name,
-          artists: t.artists || [],
-          album: t.album,
+      if (lastfm.recentTracks && lastfm.recentTracks.length > 0) {
+        const lastfmTracks = lastfm.recentTracks.map((t: any) => ({
+          name: t.name || t.title,
+          artists: [{ name: t.artist || 'Unknown' }],
+          album: t.album ? { name: t.album } : undefined,
           source: 'Last.fm'
         }));
         combined.topTracks.push(...lastfmTracks);
         
         // Извлекаем артистов из треков Last.fm
-        lastfm.recentTracks.forEach((track: Track) => {
-          if (track.artists && track.artists.length > 0) {
-            track.artists.forEach((artist) => {
-              const artistName = typeof artist === 'string' ? artist : artist.name;
-              if (!artistMap.has(artistName)) {
-                artistMap.set(artistName, {
-                  name: artistName,
-                  source: 'Last.fm',
-                  genres: [],
-                  popularity: 50
-                });
-              }
+        lastfm.recentTracks.forEach((track: any) => {
+          const artistName = track.artist || 'Unknown';
+          if (!artistMap.has(artistName)) {
+            artistMap.set(artistName, {
+              name: artistName,
+              source: 'Last.fm',
+              genres: [],
+              popularity: 50
             });
           }
         });
@@ -520,7 +532,7 @@ export default function MusicPortrait() {
                   <div className="flex-1 min-w-0">
                     <p className="text-white font-medium truncate text-xs sm:text-sm md:text-base">{track.name}</p>
                     <p className="text-gray-400 text-xs sm:text-sm truncate">
-                      {track.artists.map(a => a.name).join(', ')}
+                      {track.artists?.map(a => a.name).join(', ') || 'Unknown'}
                     </p>
                   </div>
                   
