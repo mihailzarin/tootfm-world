@@ -1,63 +1,78 @@
 // app/api/party/[code]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { prisma } from "@/lib/prisma";
 
-// GET - получить информацию о party
 export async function GET(
   request: NextRequest,
   { params }: { params: { code: string } }
 ) {
   try {
-    const { code } = params;
-    console.log('📍 Getting party:', code);
+    const session = await getServerSession();
+    
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
     const party = await prisma.party.findUnique({
-      where: { code: code.toUpperCase() },
+      where: { code: params.code.toUpperCase() },
       include: {
-        creator: {
-          select: {
-            id: true,
-            displayName: true,
-            avatar: true
-          }
-        },
         members: {
           include: {
             user: {
               select: {
                 id: true,
-                displayName: true,
-                avatar: true
+                name: true,
+                image: true
               }
             }
           }
         },
         tracks: {
-          orderBy: {
-            voteCount: 'desc'
-          }
+          orderBy: { position: 'asc' }
         }
       }
     });
 
     if (!party) {
-      return NextResponse.json(
-        { error: 'Party not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Party not found" }, { status: 404 });
+    }
+
+    // Проверяем, является ли пользователь участником
+    const isMember = party.members.some(member => member.userId === user.id);
+    
+    if (!isMember) {
+      return NextResponse.json({ error: "Not a member of this party" }, { status: 403 });
     }
 
     return NextResponse.json({
-      success: true,
-      party
+      id: party.id,
+      code: party.code,
+      name: party.name,
+      description: party.description,
+      creatorId: party.creatorId,
+      isActive: party.isActive,
+      maxMembers: party.maxMembers,
+      votingEnabled: party.votingEnabled,
+      partyRadio: party.partyRadio,
+      playlistGenerated: party.playlistGenerated,
+      totalMembers: party.totalMembers,
+      totalTracks: party.totalTracks,
+      totalVotes: party.totalVotes,
+      members: party.members,
+      tracks: party.tracks
     });
-
   } catch (error) {
-    console.error('Error fetching party:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch party' },
-      { status: 500 }
-    );
+    console.error("Error fetching party:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

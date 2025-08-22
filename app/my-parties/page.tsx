@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Music, Plus, Users, Calendar, ArrowRight, Loader2 } from 'lucide-react';
-import { ClientAuth } from '@/lib/auth/client-auth';
+import { useAuth } from "@/hooks/useAuth";
+import { useEffect, useState } from "react";
+import { Music, Users, Calendar, ArrowLeft, Plus, ExternalLink } from "lucide-react";
+import Link from "next/link";
 
 interface Party {
   id: string;
@@ -11,205 +11,164 @@ interface Party {
   name: string;
   description?: string;
   createdAt: string;
-  _count: {
-    members: number;
-    tracks: number;
-  };
+  totalMembers: number;
+  totalTracks: number;
+  playlistGenerated: boolean;
+  votingEnabled: boolean;
+  partyRadio: boolean;
+  role: 'HOST' | 'MEMBER';
 }
 
 export default function MyPartiesPage() {
-  const router = useRouter();
+  const { user, isAuthenticated, requireAuth } = useAuth();
   const [parties, setParties] = useState<Party[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchParties();
-  }, []);
+    if (requireAuth()) {
+      loadParties();
+    }
+  }, [isAuthenticated]);
 
-  const fetchParties = async () => {
+  const loadParties = async () => {
     try {
-      const userData = localStorage.getItem('user_data');
-      let worldId = null;
+      const response = await fetch('/api/parties/my');
       
-      if (userData) {
-        try {
-          const parsed = JSON.parse(userData);
-          worldId = parsed.worldId;
-        } catch (e) {
-          console.error('Error parsing user data:', e);
-        }
+      if (response.ok) {
+        const data = await response.json();
+        setParties(data);
       }
-      
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-      
-      if (worldId) {
-        headers['x-world-id'] = worldId;
-      }
-      
-      const response = await fetch('/api/user/parties', { headers });
-      const data = await response.json();
-      
-      setParties(data.parties || []);
-      setError(null);
-    } catch (err) {
-      setError('Failed to load parties');
-      console.error(err);
+    } catch (error) {
+      console.error('Failed to load parties:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      year: 'numeric'
-    });
-  };
-
-  const handleSignOut = () => {
-    ClientAuth.logout();
-  };
-
-  const isLoggedIn = () => {
-    return ClientAuth.isLoggedIn() || localStorage.getItem('world_id') !== null;
-  };
+  if (!isAuthenticated) {
+    return null;
+  }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-white animate-spin" />
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-white text-xl">Loading your parties...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black text-white">
-      {/* Header */}
-      <div className="border-b border-white/10 bg-black/20 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-8">
-            <button onClick={() => router.push('/')} className="flex items-center gap-2">
-              <Music className="w-6 h-6 text-purple-400" />
-              <span className="font-bold text-xl">tootFM</span>
-            </button>
-            <nav className="hidden md:flex items-center gap-6">
-              <span className="text-white font-medium">My Parties</span>
-              <a 
-                href="/profile"
-                onClick={(e) => { e.preventDefault(); router.push('/profile'); }}
-                className="text-gray-400 hover:text-white transition cursor-pointer"
-              >
-                Profile
-              </a>
-            </nav>
-          </div>
-          {isLoggedIn() ? (
-            <button
-              onClick={handleSignOut}
-              className="text-gray-400 hover:text-white transition"
-            >
-              Sign Out
-            </button>
-          ) : (
-            <button
-              onClick={() => router.push('/signin')}
-              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition"
-            >
-              Sign In
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-6 py-12">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-4xl font-bold mb-2">My Parties</h1>
-            <p className="text-gray-400">Manage your music democracy sessions</p>
-          </div>
-          <button
-            onClick={() => router.push('/party/create')}
-            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-xl transition-all flex items-center gap-2"
+    <div className="min-h-screen py-8">
+      <div className="container mx-auto px-4 max-w-4xl">
+        {/* Header */}
+        <div className="mb-8">
+          <Link 
+            href="/profile"
+            className="inline-flex items-center gap-2 text-gray-300 hover:text-white transition mb-4"
           >
-            <Plus className="w-5 h-5" />
-            Create Party
-          </button>
+            <ArrowLeft className="w-4 h-4" />
+            Back to Profile
+          </Link>
+          
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-white mb-2">My Parties</h1>
+              <p className="text-gray-300">Manage your music parties and playlists</p>
+            </div>
+            <Link
+              href="/party/create"
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Create Party
+            </Link>
+          </div>
         </div>
 
         {/* Parties Grid */}
         {parties.length === 0 ? (
-          <div className="bg-white/5 backdrop-blur rounded-3xl p-12 text-center">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-purple-600/20 rounded-full mb-4">
-              <Music className="w-10 h-10 text-purple-400" />
-            </div>
-            <h2 className="text-2xl font-bold mb-2">No parties yet</h2>
-            <p className="text-gray-400 mb-6">Create your first party and start the music democracy!</p>
-            <button
-              onClick={() => router.push('/party/create')}
-              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-xl transition-all inline-flex items-center gap-2"
+          <div className="bg-gradient-to-br from-purple-900/50 to-pink-900/50 rounded-2xl p-12 border border-purple-500/20 text-center">
+            <Music className="w-16 h-16 text-purple-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-white mb-4">No Parties Yet</h2>
+            <p className="text-gray-300 mb-6">
+              You haven't created or joined any parties yet. Start by creating your first party!
+            </p>
+            <Link
+              href="/party/create"
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-lg font-semibold transition"
             >
-              <Plus className="w-5 h-5" />
               Create Your First Party
-            </button>
+            </Link>
           </div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {parties.map((party) => (
-              <div
-                key={party.id}
-                className="bg-white/5 backdrop-blur rounded-2xl p-6 hover:bg-white/10 transition-all cursor-pointer group"
-                onClick={() => router.push(`/party/${party.code}`)}
-              >
+          <div className="grid md:grid-cols-2 gap-6">
+            {parties.map(party => (
+              <div key={party.id} className="bg-gradient-to-br from-purple-900/50 to-pink-900/50 rounded-2xl p-6 border border-purple-500/20 hover:border-purple-500/40 transition">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h3 className="text-xl font-bold mb-1">{party.name}</h3>
-                    <p className="text-purple-400 font-mono text-sm">#{party.code}</p>
+                    <h3 className="text-xl font-bold text-white mb-1">{party.name}</h3>
+                    {party.description && (
+                      <p className="text-gray-300 text-sm mb-2">{party.description}</p>
+                    )}
                   </div>
-                  <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-white group-hover:translate-x-1 transition-all" />
-                </div>
-                
-                {party.description && (
-                  <p className="text-gray-400 text-sm mb-4 line-clamp-2">
-                    {party.description}
-                  </p>
-                )}
-                
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-4 text-gray-400">
-                    <span className="flex items-center gap-1">
-                      <Users className="w-4 h-4" />
-                      {party._count.members}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Music className="w-4 h-4" />
-                      {party._count.tracks}
-                    </span>
-                  </div>
-                  <span className="text-gray-500 text-xs flex items-center gap-1">
-                    <Calendar className="w-3 h-3" />
-                    {formatDate(party.createdAt)}
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    party.role === 'HOST' 
+                      ? 'bg-purple-500/20 text-purple-400' 
+                      : 'bg-blue-500/20 text-blue-400'
+                  }`}>
+                    {party.role}
                   </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-white">{party.totalMembers}</div>
+                    <div className="text-gray-300 text-xs">Members</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-white">{party.totalTracks}</div>
+                    <div className="text-gray-300 text-xs">Tracks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-white">{party.code}</div>
+                    <div className="text-gray-300 text-xs">Code</div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {party.votingEnabled && (
+                    <span className="bg-green-500/20 text-green-400 px-2 py-1 rounded-full text-xs">
+                      Voting Enabled
+                    </span>
+                  )}
+                  {party.partyRadio && (
+                    <span className="bg-purple-500/20 text-purple-400 px-2 py-1 rounded-full text-xs">
+                      Party Radio
+                    </span>
+                  )}
+                  {party.playlistGenerated && (
+                    <span className="bg-blue-500/20 text-blue-400 px-2 py-1 rounded-full text-xs">
+                      Playlist Ready
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-gray-400 text-sm">
+                    <Calendar className="w-4 h-4" />
+                    {new Date(party.createdAt).toLocaleDateString()}
+                  </div>
+                  
+                  <Link
+                    href={`/party/${party.code}`}
+                    className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Open
+                  </Link>
                 </div>
               </div>
             ))}
-          </div>
-        )}
-
-        {error && (
-          <div className="mt-8 bg-red-500/20 border border-red-500/50 rounded-xl p-4 text-center">
-            <p className="text-red-300">{error}</p>
-            <button
-              onClick={fetchParties}
-              className="mt-2 text-sm text-red-400 hover:text-red-300 underline"
-            >
-              Try again
-            </button>
           </div>
         )}
       </div>
