@@ -2,57 +2,52 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession, signOut } from 'next-auth/react';
 import { Music, Users, Zap, ArrowRight, Globe, Sparkles, Shield } from 'lucide-react';
 
 export default function HomePage() {
   const router = useRouter();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { data: session, status } = useSession();
   const [userName, setUserName] = useState<string | null>(null);
 
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
+  // Определяем статус авторизации из NextAuth session
+  const isLoggedIn = !!session;
 
-  const checkAuthStatus = async () => {
-    try {
-      // Check for Google/main auth
-      const response = await fetch('/api/auth/check');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.authenticated) {
-          setIsLoggedIn(true);
-          // Try to get user name from localStorage or cookies
-          const savedName = localStorage.getItem('user_display_name');
-          if (savedName) setUserName(savedName);
-        }
-      }
-    } catch (error) {
-      console.error('Auth check failed:', error);
+  useEffect(() => {
+    // Если есть сессия, берем имя из неё
+    if (session?.user?.name) {
+      setUserName(session.user.name);
+      // Сохраняем в localStorage для быстрого доступа
+      localStorage.setItem('user_display_name', session.user.name);
     }
-  };
+  }, [session]);
 
   const handleSignOut = async () => {
     try {
-      // Call logout API
-      await fetch('/api/auth/logout', { method: 'POST' });
-      
-      // Clear all local data
-      localStorage.clear();
-      
-      // Clear cookies
-      document.cookie.split(";").forEach((c) => {
-        document.cookie = c
-          .replace(/^ +/, "")
-          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      // Используем NextAuth signOut
+      await signOut({ 
+        redirect: false,
+        callbackUrl: '/' 
       });
       
-      setIsLoggedIn(false);
-      setUserName(null);
+      // Очищаем локальные данные
+      localStorage.clear();
+      
+      // Редирект на главную
       router.push('/');
     } catch (error) {
       console.error('Logout failed:', error);
     }
   };
+
+  // Показываем загрузку пока проверяется сессия
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-purple-900 via-black to-purple-900 flex items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 via-black to-purple-900">
