@@ -114,3 +114,14 @@ export function getLastFmUsername(): string | null {
   const lastfmCookie = cookies.find(c => c.trim().startsWith(`${AUTH_CONFIG.COOKIES.LASTFM_USERNAME}=`));
   return lastfmCookie ? lastfmCookie.split('=')[1] : null;
 }
+
+// Backward-compatible API for legacy imports
+export const ClientAuth = {
+  getUserId,
+  saveUserId: setUserId,
+  setUserId,
+  isLoggedIn: (): boolean => !!getUserId(),
+  logout: clearAuth,
+  clearAuth,
+  checkAuthStatus,
+};

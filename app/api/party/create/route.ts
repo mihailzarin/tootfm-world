@@ -1,28 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { AUTH_CONFIG, getCookieOptions } from '@/lib/auth/config';
-
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL
-    }
-  }
-});
+import { prisma } from '@/lib/prisma';
 
 function generatePartyCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
   for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+    code += chars.charAt(Math.floor(Math.random() * (chars.length)));
   }
   return code;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    await prisma.$connect();
-    
     const body = await request.json();
     const { name, description, isPublic = false } = body;
 
@@ -172,7 +162,5 @@ export async function POST(request: NextRequest) {
       { error: errorMessage },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
