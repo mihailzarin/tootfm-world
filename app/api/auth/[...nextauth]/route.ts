@@ -23,15 +23,27 @@ export const authOptions: NextAuthOptions = {
       allowDangerousEmailAccountLinking: true,
     }),
     
-    // Spotify Provider (НОВЫЙ)
+    // Spotify Provider (ОБНОВЛЕННЫЙ)
     SpotifyProvider({
       clientId: process.env.SPOTIFY_CLIENT_ID!,
       clientSecret: process.env.SPOTIFY_CLIENT_SECRET!,
       authorization: {
+        url: "https://accounts.spotify.com/authorize",
         params: {
-          scope: 'user-read-email user-read-private user-top-read user-read-recently-played user-library-read playlist-read-private playlist-read-collaborative streaming user-read-playback-state user-modify-playback-state'
+          scope: 'user-read-email user-read-private user-top-read user-read-recently-played user-library-read playlist-read-private playlist-read-collaborative streaming user-read-playback-state user-modify-playback-state',
+          show_dialog: false,
         }
       },
+      // ВАЖНО: Добавляем profile mapping
+      profile(profile) {
+        return {
+          id: profile.id,
+          name: profile.display_name || profile.email,
+          email: profile.email,
+          image: profile.images?.[0]?.url || null,
+        }
+      },
+      // Разрешаем связывание аккаунтов
       allowDangerousEmailAccountLinking: true,
     })
   ],
@@ -41,6 +53,7 @@ export const authOptions: NextAuthOptions = {
       console.log('[NextAuth] SignIn callback started');
       console.log('[NextAuth] Provider:', account?.provider);
       console.log('[NextAuth] User email:', user?.email);
+      console.log('[NextAuth] Profile:', JSON.stringify(profile, null, 2));
       
       if (!user?.email) {
         console.error('[NextAuth] No email found');
@@ -72,13 +85,13 @@ export const authOptions: NextAuthOptions = {
                 type: account.type,
                 provider: account.provider,
                 providerAccountId: account.providerAccountId,
-                refresh_token: account.refresh_token,
-                access_token: account.access_token,
-                expires_at: account.expires_at,
-                token_type: account.token_type,
-                scope: account.scope,
-                id_token: account.id_token,
-                session_state: account.session_state,
+                refresh_token: account.refresh_token || null,
+                access_token: account.access_token || null,
+                expires_at: account.expires_at || null,
+                token_type: account.token_type || null,
+                scope: account.scope || null,
+                id_token: account.id_token || null,
+                session_state: account.session_state || null,
               }
             });
           }
@@ -90,6 +103,7 @@ export const authOptions: NextAuthOptions = {
               name: user.name || dbUser.name,
               image: user.image || dbUser.image,
               googleId: account?.provider === 'google' ? account.providerAccountId : dbUser.googleId,
+              spotifyId: account?.provider === 'spotify' ? account.providerAccountId : dbUser.spotifyId,
               emailVerified: new Date(),
             }
           });
@@ -107,7 +121,7 @@ export const authOptions: NextAuthOptions = {
               },
               update: {
                 accessToken: account.access_token,
-                refreshToken: account.refresh_token,
+                refreshToken: account.refresh_token || null,
                 tokenExpiry: account.expires_at ? new Date(account.expires_at * 1000) : null,
                 spotifyId: account.providerAccountId,
                 isActive: true,
@@ -117,7 +131,7 @@ export const authOptions: NextAuthOptions = {
                 userId: dbUser.id,
                 service: 'SPOTIFY',
                 accessToken: account.access_token,
-                refreshToken: account.refresh_token,
+                refreshToken: account.refresh_token || null,
                 tokenExpiry: account.expires_at ? new Date(account.expires_at * 1000) : null,
                 spotifyId: account.providerAccountId,
                 isActive: true
@@ -135,19 +149,20 @@ export const authOptions: NextAuthOptions = {
               name: user.name || null,
               image: user.image || null,
               googleId: account?.provider === 'google' ? account.providerAccountId : null,
+              spotifyId: account?.provider === 'spotify' ? account.providerAccountId : null,
               emailVerified: new Date(),
               accounts: account ? {
                 create: {
                   type: account.type,
                   provider: account.provider,
                   providerAccountId: account.providerAccountId,
-                  refresh_token: account.refresh_token,
-                  access_token: account.access_token,
-                  expires_at: account.expires_at,
-                  token_type: account.token_type,
-                  scope: account.scope,
-                  id_token: account.id_token,
-                  session_state: account.session_state,
+                  refresh_token: account.refresh_token || null,
+                  access_token: account.access_token || null,
+                  expires_at: account.expires_at || null,
+                  token_type: account.token_type || null,
+                  scope: account.scope || null,
+                  id_token: account.id_token || null,
+                  session_state: account.session_state || null,
                 }
               } : undefined,
               // Если это Spotify, сразу создаем MusicService
@@ -155,7 +170,7 @@ export const authOptions: NextAuthOptions = {
                 create: {
                   service: 'SPOTIFY',
                   accessToken: account.access_token,
-                  refreshToken: account.refresh_token,
+                  refreshToken: account.refresh_token || null,
                   tokenExpiry: account.expires_at ? new Date(account.expires_at * 1000) : null,
                   spotifyId: account.providerAccountId,
                   isActive: true
@@ -170,6 +185,7 @@ export const authOptions: NextAuthOptions = {
         return true;
       } catch (error) {
         console.error('[NextAuth] Database error:', error);
+        console.error('[NextAuth] Error stack:', (error as any).stack);
         return false;
       }
     },
@@ -207,6 +223,7 @@ export const authOptions: NextAuthOptions = {
             
             // Добавляем дополнительные поля
             (session.user as any).googleId = dbUser.googleId;
+            (session.user as any).spotifyId = dbUser.spotifyId;
             (session.user as any).worldId = dbUser.worldId;
             (session.user as any).verified = dbUser.verified;
           }
@@ -230,7 +247,6 @@ export const authOptions: NextAuthOptions = {
       
       // При обновлении токена (для Spotify refresh)
       if (trigger === "update" && token.sub) {
-        // Здесь можно обновить токены Spotify если нужно
         console.log('[NextAuth] Token update triggered');
       }
       
@@ -243,6 +259,11 @@ export const authOptions: NextAuthOptions = {
       // После успешного входа через любой провайдер
       if (url.includes('/api/auth/callback')) {
         return `${baseUrl}/profile`;
+      }
+      
+      // Если есть callbackUrl параметр
+      if (url.startsWith('/')) {
+        return `${baseUrl}${url}`;
       }
       
       // Сохраняем остальные редиректы
@@ -277,6 +298,19 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 дней
+  },
+  
+  // ДОБАВЛЯЕМ: Явные настройки для cookies
+  cookies: {
+    sessionToken: {
+      name: `__Secure-next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: true
+      }
+    }
   }
 };
 
