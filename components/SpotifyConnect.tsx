@@ -2,11 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { signIn, useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/button';
 import { Music } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 
-export function SpotifyConnect() {
+export default function SpotifyConnect() {
   const { data: session, status } = useSession();
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -97,9 +95,6 @@ export function SpotifyConnect() {
     }
   };
 
-  // Показываем debug информацию в development
-  const isDev = process.env.NODE_ENV === 'development';
-
   return (
     <div className="space-y-4">
       <div className="p-6 bg-[#1DB954]/10 rounded-xl border border-[#1DB954]/20">
@@ -115,34 +110,31 @@ export function SpotifyConnect() {
           </div>
           
           {isConnected ? (
-            <Button
+            <button
               onClick={handleDisconnect}
-              variant="outline"
-              className="border-red-500 text-red-500 hover:bg-red-500/10"
+              className="px-4 py-2 border border-red-500 text-red-500 rounded-lg hover:bg-red-500/10 transition-colors"
             >
               Disconnect
-            </Button>
+            </button>
           ) : (
-            <Button
+            <button
               onClick={handleConnect}
               disabled={isConnecting || status === 'loading'}
-              className="bg-[#1DB954] hover:bg-[#1DB954]/90 text-white"
+              className="px-4 py-2 bg-[#1DB954] hover:bg-[#1DB954]/90 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isConnecting ? 'Connecting...' : 'Connect Spotify'}
-            </Button>
+            </button>
           )}
         </div>
         
         {error && (
-          <Alert className="mt-4 border-red-500/50 bg-red-500/10">
-            <AlertDescription className="text-red-600">
-              {error}
-            </AlertDescription>
-          </Alert>
+          <div className="mt-4 p-3 border border-red-500/50 bg-red-500/10 rounded-lg">
+            <p className="text-red-600 text-sm">{error}</p>
+          </div>
         )}
         
-        {/* Debug info в development */}
-        {isDev && debugInfo && (
+        {/* Debug info */}
+        {debugInfo && (
           <details className="mt-4">
             <summary className="cursor-pointer text-xs text-gray-500">
               Debug Information
@@ -155,14 +147,12 @@ export function SpotifyConnect() {
       </div>
       
       {/* Кнопка для диагностики (временно) */}
-      <Button
+      <button
         onClick={runDiagnostics}
-        variant="ghost"
-        size="sm"
-        className="text-xs opacity-50"
+        className="text-xs opacity-50 hover:opacity-100 transition-opacity"
       >
         Run Diagnostics
-      </Button>
+      </button>
     </div>
   );
 }
