@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import AppleMusicConnect from "@/components/music-services/AppleMusicConnect";
+import AppleMusicConnect from "@/src/components/music-services/AppleMusicConnect";
 
 export default function ProfileClient() {
   const router = useRouter();
