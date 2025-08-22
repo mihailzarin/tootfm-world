@@ -1,6 +1,5 @@
 // app/api/party/[code]/generate-playlist/route.ts
 // ФИНАЛЬНАЯ ВЕРСИЯ: Поддержка Spotify + Last.fm + Apple Music
-// С исправлением всех ошибок и детальным логированием
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -23,15 +22,15 @@ interface UniversalTrack {
 }
 
 // ==========================================
-// ГЛАВНАЯ ФУНКЦИЯ
+// ГЛАВНАЯ ФУНКЦИЯ - ИСПРАВЛЕННАЯ СИГНАТУРА
 // ==========================================
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { code } = params;
+    const { code } = await params; // await для Next.js 15
     console.log('🎵 Generating UNIVERSAL playlist for party:', code);
 
     // 1. Получаем party с профилями
@@ -51,8 +50,7 @@ export async function POST(
           include: {
             musicProfile: true
           }
-        },
-        tracks: true // Существующие треки
+        }
       }
     });
 
@@ -60,33 +58,20 @@ export async function POST(
       return NextResponse.json({ error: 'Party not found' }, { status: 404 });
     }
 
-    console.log(`✅ Found party: ${party.name}`);
-    console.log(`👥 Members: ${party.members.length}`);
-    console.log(`🎵 Existing tracks: ${party.tracks.length}`);
-
-    // Очищаем старые треки
-    if (party.tracks.length > 0) {
-      console.log('🗑️ Clearing old tracks...');
-      await prisma.track.deleteMany({
-        where: { partyId: party.id }
-      });
-    }
-
     // 2. Собираем профили
     const profiles = [];
     
-    console.log("🔍 Creator:", party.creator?.id, "has profile:", !!party.creator?.musicProfile);
-    console.log("🔍 Members count:", party.members.length);
-    if (party.creator?.musicProfile) {
-      console.log("📋 Creator profile topGenres:", party.creator.musicProfile.topGenres);
+    // Добавляем профиль создателя
+    if (party.creator.musicProfile) {
       profiles.push({
         userId: party.creator.id,
         profile: party.creator.musicProfile
       });
     }
-    
+
+    // Добавляем профили участников
     party.members.forEach(member => {
-      if (member.user?.musicProfile) {
+      if (member.user.musicProfile) {
         profiles.push({
           userId: member.user.id,
           profile: member.user.musicProfile
@@ -96,7 +81,14 @@ export async function POST(
 
     console.log(`📊 Found ${profiles.length} music profiles`);
 
-    // 3. Анализируем профили из ВСЕХ сервисов
+    if (profiles.length === 0) {
+      return NextResponse.json({
+        error: 'No music profiles found',
+        message: 'Party members need to analyze their music first'
+      }, { status: 400 });
+    }
+
+    // 3. Анализируем профили
     const universalTracks = analyzeUniversalProfiles(profiles);
     console.log(`🌍 Analyzed ${universalTracks.length} universal tracks`);
 
@@ -194,138 +186,122 @@ function analyzeUniversalProfiles(profiles: any[]): UniversalTrack[] {
 
   profiles.forEach(({ profile }, profileIndex) => {
     console.log(`📊 Profile ${profileIndex + 1}:`, {
-      hasTopTracks: !!profile.topTracks,
-      hasTopArtists: !!profile.topArtists
+      hasTopTracks: !!profile.unifiedTopTracks,
+      hasTopArtists: !!profile.unifiedTopArtists
     });
     
-    if (!profile.topTracks) {
-      console.log(`⚠️ Profile ${profileIndex + 1} has no topTracks`);
-      return;
-    }
-
-    try {
-      const tracks = JSON.parse(profile.topTracks);
-      console.log(`🎵 Found ${tracks.length} tracks in profile ${profileIndex + 1}`);
-      
-      tracks.forEach((track: any, trackIndex: number) => {
-        // Более детальное логирование
-        if (trackIndex < 5) {
-          console.log(`  Track ${trackIndex + 1}:`, {
-            name: track.name,
-            artist: track.artist || track.artists?.[0]?.name,
-            source: track.source
+    // Обрабатываем треки из MusicProfile
+    if (profile.unifiedTopTracks) {
+      try {
+        const tracks = typeof profile.unifiedTopTracks === 'string' 
+          ? JSON.parse(profile.unifiedTopTracks) 
+          : profile.unifiedTopTracks;
+        
+        if (Array.isArray(tracks)) {
+          tracks.forEach((track: any) => {
+            const key = `${track.name}-${track.artists?.[0]?.name || track.artist}`;
+            
+            if (trackMap.has(key)) {
+              const existing = trackMap.get(key)!;
+              existing.matchScore++;
+              existing.sourceCount++;
+            } else {
+              trackMap.set(key, {
+                name: track.name,
+                artist: track.artists?.[0]?.name || track.artist || 'Unknown',
+                album: track.album?.name || track.album,
+                sources: {
+                  spotify: track.id || track.spotifyId,
+                  lastfm: track.lastfmId,
+                  apple: track.appleId
+                },
+                matchScore: 1,
+                sourceCount: 1
+              });
+            }
           });
         }
-        
-        // Улучшенное определение источника
-        let source = 'unknown';
-        let sourceId = '';
-        
-        if (track.source === 'Spotify' || track.spotifyId || track.id?.includes('spotify')) {
-          source = 'spotify';
-          sourceId = track.spotifyId || track.id;
-        } else if (track.source === 'Last.fm' || track.mbid || track.url?.includes('last.fm')) {
-          source = 'lastfm';
-          sourceId = track.mbid || track.url || '';
-        } else if (track.source === 'Apple Music' || track.isrc || track.attributes) {
-          source = 'apple';
-          sourceId = track.isrc || track.id || '';
-        }
-        
-        // Нормализуем artist
-        const artistName = typeof track.artist === 'string' 
-          ? track.artist 
-          : (track.artist?.name || track.artist?.['#text'] || track.artists?.[0]?.name || 'Unknown Artist');
-        
-        const key = normalizeTrackKey(track.name, artistName);
-        
-        if (!trackMap.has(key)) {
-          trackMap.set(key, {
-            name: track.name,
-            artist: artistName,
-            album: track.album || track.album?.name,
-            sources: {},
-            matchScore: 0,
-            sourceCount: 0
-          });
-        }
-        
-        const entry = trackMap.get(key)!;
-        
-        // Добавляем источник
-        if (source !== 'unknown') {
-          entry.sources[source] = sourceId;
-          entry.sourceCount = Object.keys(entry.sources).length;
-        }
-        
-        // Увеличиваем score (больше за популярность в профиле)
-        entry.matchScore += (tracks.length - trackIndex) + 10;
-      });
-    } catch (e) {
-      console.error(`❌ Error parsing tracks in profile ${profileIndex + 1}:`, e);
-    }
-  });
-
-  const result = Array.from(trackMap.values())
-    .sort((a, b) => {
-      // Приоритет: треки из нескольких источников
-      if (a.sourceCount !== b.sourceCount) {
-        return b.sourceCount - a.sourceCount;
+      } catch (e) {
+        console.error('Error parsing tracks:', e);
       }
-      return b.matchScore - a.matchScore;
-    });
-  
-  console.log(`✅ Generated ${result.length} universal tracks`);
-  result.slice(0, 10).forEach((track, i) => {
-    console.log(`  ${i + 1}. ${track.name} - ${track.artist} (score: ${track.matchScore}, sources: ${track.sourceCount})`);
+    }
   });
-  
-  return result;
+
+  return Array.from(trackMap.values())
+    .sort((a, b) => b.matchScore - a.matchScore);
 }
 
 // ==========================================
 // SPOTIFY РЕКОМЕНДАЦИИ
 // ==========================================
 
-async function getSpotifyRecommendations(token: string, profiles: any[]): Promise<UniversalTrack[]> {
+async function getSpotifyRecommendations(
+  token: string,
+  profiles: any[]
+): Promise<UniversalTrack[]> {
   try {
-    // Собираем жанры из профилей
-    const genres = new Set<string>();
+    // Собираем seed артистов и жанры
+    const seedArtists = new Set<string>();
+    const seedGenres = new Set<string>();
     
     profiles.forEach(({ profile }) => {
-      if (profile.topGenres) {
+      if (profile.unifiedTopArtists) {
         try {
-          const profileGenres = JSON.parse(profile.topGenres);
-          profileGenres.forEach((g: string) => genres.add(g));
-        } catch (e) {}
+          const artists = typeof profile.unifiedTopArtists === 'string'
+            ? JSON.parse(profile.unifiedTopArtists)
+            : profile.unifiedTopArtists;
+          
+          if (Array.isArray(artists)) {
+            artists.slice(0, 2).forEach((artist: any) => {
+              if (artist.id) seedArtists.add(artist.id);
+            });
+          }
+        } catch (e) {
+          console.error('Error parsing artists:', e);
+        }
+      }
+      
+      if (profile.unifiedTopGenres) {
+        try {
+          const genres = typeof profile.unifiedTopGenres === 'string'
+            ? JSON.parse(profile.unifiedTopGenres)
+            : profile.unifiedTopGenres;
+          
+          if (Array.isArray(genres)) {
+            genres.slice(0, 2).forEach((genre: string) => {
+              seedGenres.add(genre.toLowerCase().replace(' ', '-'));
+            });
+          }
+        } catch (e) {
+          console.error('Error parsing genres:', e);
+        }
       }
     });
 
-    // Форматируем жанры для Spotify
-    const seedGenres = Array.from(genres)
-      .map(g => g.toLowerCase().replace(/\s+/g, '-'))
-      .filter(g => ['pop', 'rock', 'hip-hop', 'electronic', 'indie'].some(v => g.includes(v)))
-      .slice(0, 2);
-
-    if (seedGenres.length === 0) {
-      seedGenres.push('pop'); // Fallback
+    const seedArtistsList = Array.from(seedArtists).slice(0, 3);
+    const seedGenresList = Array.from(seedGenres).slice(0, 2);
+    
+    if (seedArtistsList.length === 0 && seedGenresList.length === 0) {
+      return [];
     }
 
-    console.log('🎧 Spotify genres:', seedGenres);
-
     const params = new URLSearchParams({
-      limit: '10',
-      market: 'US',
-      seed_genres: seedGenres.join(',')
+      seed_artists: seedArtistsList.join(','),
+      seed_genres: seedGenresList.join(','),
+      limit: '10'
     });
 
     const response = await fetch(
       `https://api.spotify.com/v1/recommendations?${params}`,
-      { headers: { 'Authorization': `Bearer ${token}` } }
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      }
     );
 
     if (!response.ok) {
-      console.error('Spotify API error:', response.status);
+      console.error('Spotify recommendations failed:', response.status);
       return [];
     }
 
@@ -333,83 +309,61 @@ async function getSpotifyRecommendations(token: string, profiles: any[]): Promis
     
     return data.tracks.map((track: any) => ({
       name: track.name,
-      artist: track.artists[0]?.name || 'Unknown',
-      album: track.album?.name,
-      sources: { spotify: track.id },
-      matchScore: 50,
+      artist: track.artists[0].name,
+      album: track.album.name,
+      sources: {
+        spotify: track.id
+      },
+      matchScore: 0.5,
       sourceCount: 1
     }));
-
+    
   } catch (error) {
-    console.error('Spotify recommendations error:', error);
+    console.error('Error getting Spotify recommendations:', error);
     return [];
   }
 }
 
 // ==========================================
-// УТИЛИТЫ
+// ДЕДУПЛИКАЦИЯ И СОРТИРОВКА
 // ==========================================
 
-function normalizeTrackKey(name: string, artist: string): string {
-  const normalizedName = name
-    .toLowerCase()
-    .replace(/[^\w\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .replace(/\(.*?\)/g, '')
-    .replace(/\[.*?\]/g, '')
-    .trim();
-
-  const normalizedArtist = artist
-    .toLowerCase()
-    .replace(/[^\w\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .split(/[,&]/)[0]
-    .trim();
-
-  return `${normalizedArtist}-${normalizedName}`;
-}
-
 function deduplicateAndSort(tracks: UniversalTrack[]): UniversalTrack[] {
-  const seen = new Map<string, UniversalTrack>();
+  const uniqueMap = new Map<string, UniversalTrack>();
   
   tracks.forEach(track => {
-    const key = normalizeTrackKey(track.name, track.artist);
+    const key = `${track.name.toLowerCase()}-${track.artist.toLowerCase()}`;
     
-    if (!seen.has(key) || track.matchScore > seen.get(key)!.matchScore) {
-      seen.set(key, track);
-    } else {
+    if (uniqueMap.has(key)) {
+      const existing = uniqueMap.get(key)!;
       // Объединяем источники
-      const existing = seen.get(key)!;
-      Object.assign(existing.sources, track.sources);
-      existing.sourceCount = Object.keys(existing.sources).length;
+      existing.sources = { ...existing.sources, ...track.sources };
       existing.matchScore = Math.max(existing.matchScore, track.matchScore);
+      existing.sourceCount = Math.max(existing.sourceCount, track.sourceCount);
+    } else {
+      uniqueMap.set(key, track);
     }
   });
   
-  return Array.from(seen.values())
-    .sort((a, b) => {
-      if (a.sourceCount !== b.sourceCount) {
-        return b.sourceCount - a.sourceCount;
-      }
-      return b.matchScore - a.matchScore;
-    });
+  return Array.from(uniqueMap.values())
+    .sort((a, b) => b.matchScore - a.matchScore);
 }
 
-function getSourceStats(tracks: any[]): any {
-  const stats = {
+// ==========================================
+// СТАТИСТИКА ИСТОЧНИКОВ
+// ==========================================
+
+function getSourceStats(tracks: any[]): Record<string, number> {
+  const stats: Record<string, number> = {
     spotify: 0,
     lastfm: 0,
-    apple: 0,
-    multiSource: 0
+    apple: 0
   };
   
   tracks.forEach(track => {
-    if (track.sources) {
-      if (track.sources.spotify) stats.spotify++;
-      if (track.sources.lastfm) stats.lastfm++;
-      if (track.sources.apple) stats.apple++;
-      if (track.sourceCount > 1) stats.multiSource++;
-    }
+    if (track.sources?.spotify) stats.spotify++;
+    if (track.sources?.lastfm) stats.lastfm++;
+    if (track.sources?.apple) stats.apple++;
   });
   
   return stats;
