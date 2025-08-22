@@ -1,76 +1,106 @@
+// app/api/music/lastfm/top-tracks/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { prisma } from '@/lib/prisma';
+
+const LASTFM_API_KEY = process.env.LASTFM_API_KEY!;
 
 export async function GET(request: NextRequest) {
   try {
-    // Получаем данные из cookies
-    const cookieStore = request.cookies;
-    const lastfmUserCookie = cookieStore.get('lastfm_user');
+    // Получаем сессию NextAuth
+    const session = await getServerSession(authOptions);
     
-    if (!lastfmUserCookie) {
-      return NextResponse.json({ error: 'Not connected to Last.fm' }, { status: 401 });
+    if (!session?.user?.email) {
+      console.log('❌ No session found');
+      return NextResponse.json({ 
+        error: 'Unauthorized - Please sign in'
+      }, { status: 401 });
     }
-    
-    let userData;
-    try {
-      userData = JSON.parse(lastfmUserCookie.value);
-    } catch (e) {
-      console.error('Error parsing cookie:', e);
-      return NextResponse.json({ error: 'Invalid cookie data' }, { status: 400 });
+
+    // Получаем пользователя из БД
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      include: {
+        musicServices: {
+          where: { service: 'LASTFM' }
+        }
+      }
+    });
+
+    if (!user) {
+      return NextResponse.json({ 
+        error: 'User not found'
+      }, { status: 404 });
     }
+
+    // Проверяем Last.fm сервис
+    const lastfmService = user.musicServices[0];
     
-    if (!userData.username) {
-      return NextResponse.json({ error: 'No username found' }, { status: 401 });
-    }
-    
-    console.log('Fetching tracks for:', userData.username);
-    
-    // Получаем recent tracks (так как топ треков нет)
-    const apiKey = process.env.LASTFM_API_KEY!;
-    const recentUrl = `https://ws.audioscrobbler.com/2.0/?method=user.getRecentTracks&user=${userData.username}&api_key=${apiKey}&format=json&limit=10`;
-    
-    const response = await fetch(recentUrl);
-    const data = await response.json();
-    
-    let tracks = [];
-    
-    if (data.recenttracks?.track) {
-      const recentTracks = Array.isArray(data.recenttracks.track) 
-        ? data.recenttracks.track 
-        : [data.recenttracks.track];
+    if (!lastfmService?.lastfmUsername) {
+      // Проверяем cookies для обратной совместимости
+      const lastfmUsername = request.cookies.get('lastfm_username')?.value;
       
-      // Группируем треки и считаем plays
-      const trackMap = new Map();
+      if (!lastfmUsername) {
+        console.log('❌ Last.fm not connected');
+        return NextResponse.json({ 
+          error: 'Last.fm not connected',
+          tracks: []
+        }, { status: 401 });
+      }
       
-      recentTracks.forEach((track: any) => {
-        const key = `${track.name}-${track.artist['#text'] || track.artist}`;
-        if (!trackMap.has(key)) {
-          trackMap.set(key, {
-            title: track.name,
-            artist: track.artist['#text'] || track.artist || 'Unknown',
-            playCount: 1,
-            imageUrl: track.image?.[2]?.['#text'] || track.image?.[1]?.['#text'],
-            url: track.url,
-            album: track.album?.['#text'] || ''
-          });
-        } else {
-          trackMap.get(key).playCount++;
+      // Сохраняем в БД для будущего использования
+      await prisma.musicService.upsert({
+        where: {
+          userId_service: {
+            userId: user.id,
+            service: 'LASTFM'
+          }
+        },
+        update: {
+          lastfmUsername: lastfmUsername,
+          isActive: true,
+          lastSynced: new Date()
+        },
+        create: {
+          userId: user.id,
+          service: 'LASTFM',
+          lastfmUsername: lastfmUsername,
+          isActive: true,
+          lastSynced: new Date()
         }
       });
       
-      // Конвертируем в массив и сортируем
-      tracks = Array.from(trackMap.values())
-        .sort((a, b) => b.playCount - a.playCount)
-        .slice(0, 10);
-      
-      console.log(`Found ${tracks.length} unique tracks from recent plays`);
+      return fetchLastfmData(lastfmUsername);
     }
-    
-    return NextResponse.json({ tracks });
+
+    // Используем username из БД
+    return fetchLastfmData(lastfmService.lastfmUsername);
+
   } catch (error) {
-    console.error('Error fetching tracks:', error);
+    console.error('❌ Error in Last.fm API:', error);
     return NextResponse.json({ 
-      error: 'Failed to fetch tracks',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Internal server error',
+      tracks: []
     }, { status: 500 });
   }
+}
+
+async function fetchLastfmData(username: string) {
+  console.log('🎵 Fetching Last.fm data for:', username);
+  
+  const response = await fetch(
+    `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${username}&api_key=${LASTFM_API_KEY}&format=json&limit=20&period=3month`
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch from Last.fm');
+  }
+
+  const data = await response.json();
+  console.log(`✅ Got ${data.toptracks?.track?.length || 0} tracks from Last.fm`);
+  
+  return NextResponse.json({ 
+    tracks: data.toptracks?.track || []
+  });
 }

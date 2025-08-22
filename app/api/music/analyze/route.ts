@@ -1,107 +1,109 @@
 // app/api/music/analyze/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🎵 Starting music analysis...');
+    // Получаем сессию NextAuth
+    const session = await getServerSession(authOptions);
     
-    // Получаем userId из cookies (от Google)
-    const userId = request.cookies.get('tootfm_user_id')?.value;
-    
-    if (!userId) {
+    if (!session?.user?.email) {
+      console.log('❌ No session found');
       return NextResponse.json({ 
-        error: 'Not authenticated' 
+        error: 'Unauthorized - Please sign in'
       }, { status: 401 });
     }
 
-    // Получаем тело запроса с данными анализа
-    const body = await request.json();
-    const { topTracks, topArtists, topGenres, musicPersonality, energyLevel, diversityScore } = body;
-
-    console.log('📊 Received analysis data:', {
-      tracks: topTracks?.length,
-      artists: topArtists?.length,
-      genres: topGenres?.length
+    // Получаем пользователя из БД
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
     });
 
-    // Находим или создаём пользователя в БД
-    let dbUser = await prisma.user.findUnique({
-      where: { worldId: userId }
-    });
-
-    if (!dbUser) {
-      // Получаем данные из cookie
-      const googleUserCookie = request.cookies.get('google_user')?.value;
-      let googleUser = null;
-      
-      if (googleUserCookie) {
-        try {
-          googleUser = JSON.parse(googleUserCookie);
-        } catch (e) {
-          console.error('Failed to parse google_user cookie');
-        }
-      }
-
-      // Создаём пользователя если его нет
-      console.log('📝 Creating new user in DB...');
-      dbUser = await prisma.user.create({
-        data: {
-          worldId: userId,
-          googleId: userId.replace('google_', ''),
-          email: googleUser?.email,
-          displayName: googleUser?.name || 'User',
-          avatar: googleUser?.picture,
-          verified: true
-        }
-      });
-      console.log('✅ User created:', dbUser.id);
+    if (!user) {
+      return NextResponse.json({ 
+        error: 'User not found'
+      }, { status: 404 });
     }
+
+    // Получаем данные анализа из тела запроса
+    const analysisData = await request.json();
+    
+    console.log('💾 Saving music profile for user:', user.id);
 
     // Сохраняем или обновляем музыкальный профиль
     const musicProfile = await prisma.musicProfile.upsert({
-      where: { userId: dbUser.id },
+      where: { userId: user.id },
       update: {
-        topTracks: JSON.stringify(topTracks || []),
-        topArtists: JSON.stringify(topArtists || []),
-        topGenres: JSON.stringify(topGenres || []),
-        musicPersonality: musicPersonality || null,
-        energyLevel: energyLevel || 0.5,
-        diversityScore: diversityScore || 0.5,
-        calculatedAt: new Date(),
-        lastUpdated: new Date()
+        unifiedTopTracks: analysisData.topTracks || null,
+        unifiedTopArtists: analysisData.topArtists || null,
+        unifiedTopGenres: analysisData.topGenres || null,
+        musicPersonality: analysisData.musicPersonality || null,
+        dominantGenres: analysisData.topGenres || null,
+        energyLevel: analysisData.energyLevel || null,
+        diversityScore: analysisData.diversityScore || null,
+        lastAnalyzed: new Date()
       },
       create: {
-        userId: dbUser.id,
-        topTracks: JSON.stringify(topTracks || []),
-        topArtists: JSON.stringify(topArtists || []),
-        topGenres: JSON.stringify(topGenres || []),
-        musicPersonality: musicPersonality || null,
-        energyLevel: energyLevel || 0.5,
-        diversityScore: diversityScore || 0.5
+        userId: user.id,
+        unifiedTopTracks: analysisData.topTracks || null,
+        unifiedTopArtists: analysisData.topArtists || null,
+        unifiedTopGenres: analysisData.topGenres || null,
+        musicPersonality: analysisData.musicPersonality || null,
+        dominantGenres: analysisData.topGenres || null,
+        energyLevel: analysisData.energyLevel || null,
+        diversityScore: analysisData.diversityScore || null,
+        lastAnalyzed: new Date()
       }
     });
 
-    console.log('✅ Music profile saved to DB');
+    console.log('✅ Music profile saved successfully');
 
-    return NextResponse.json({
+    return NextResponse.json({ 
       success: true,
-      profile: {
-        id: musicProfile.id,
-        topGenres,
-        musicPersonality,
-        energyLevel,
-        diversityScore,
-        topArtists: topArtists?.slice(0, 10),
-        topTracks: topTracks?.slice(0, 10)
-      }
+      profileId: musicProfile.id
     });
 
   } catch (error) {
-    console.error('❌ Analysis error:', error);
-    return NextResponse.json(
-      { error: 'Failed to analyze music' },
-      { status: 500 }
-    );
+    console.error('❌ Error saving music profile:', error);
+    return NextResponse.json({ 
+      error: 'Failed to save music profile'
+    }, { status: 500 });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    // Получаем сессию NextAuth
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.email) {
+      return NextResponse.json({ 
+        error: 'Unauthorized'
+      }, { status: 401 });
+    }
+
+    // Получаем профиль пользователя
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      include: {
+        musicProfile: true
+      }
+    });
+
+    if (!user?.musicProfile) {
+      return NextResponse.json({ 
+        error: 'Music profile not found'
+      }, { status: 404 });
+    }
+
+    return NextResponse.json(user.musicProfile);
+
+  } catch (error) {
+    console.error('❌ Error fetching music profile:', error);
+    return NextResponse.json({ 
+      error: 'Failed to fetch music profile'
+    }, { status: 500 });
   }
 }
