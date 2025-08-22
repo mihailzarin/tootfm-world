@@ -15,13 +15,13 @@ declare module "next-auth" {
     email: string;
     name?: string;
     image?: string;
-    googleId: string;
+    googleId?: string;
     worldId?: string;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
-    userId: string;
+    userId?: string;
   }
 }
