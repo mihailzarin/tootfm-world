@@ -36,8 +36,8 @@ export async function GET() {
           accounts: {
             select: {
               provider: true,
-              providerAccountId: true,
-              createdAt: true
+              providerAccountId: true
+              // Убрали createdAt - его нет в модели Account
             }
           },
           musicServices: {
