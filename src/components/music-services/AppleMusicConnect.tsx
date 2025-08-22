@@ -1,161 +1,53 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Music } from 'lucide-react';
+import { useState } from 'react';
 
-declare global {
-  interface Window {
-    MusicKit: any;
-  }
+interface AppleMusicConnectProps {
+  onConnectionChange?: (connected: boolean) => void;
 }
 
-export default function AppleMusicConnect() {
-  const [isConnected, setIsConnected] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [musicKitLoaded, setMusicKitLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const savedToken = localStorage.getItem('apple_music_token');
-    if (savedToken) {
-      setIsConnected(true);
-    }
-    loadMusicKit();
-  }, []);
-
-  const loadMusicKit = async () => {
-    try {
-      if (window.MusicKit) {
-        await initializeMusicKit();
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = 'https://js-cdn.music.apple.com/musickit/v3/musickit.js';
-      script.async = true;
-      script.onload = () => initializeMusicKit();
-      script.onerror = () => setError('Failed to load Apple Music');
-      document.head.appendChild(script);
-    } catch (err) {
-      setError('Error loading Apple Music');
-    }
-  };
-
-  const initializeMusicKit = async () => {
-    try {
-      const response = await fetch('/api/music/apple/token');
-      const data = await response.json();
-      
-      if (!data.success) {
-        setError('Failed to get authorization token');
-        return;
-      }
-
-      await window.MusicKit.configure({
-        developerToken: data.token,
-        app: {
-          name: 'tootFM',
-          build: '1.0.0'
-        }
-      });
-
-      setMusicKitLoaded(true);
-      console.log('✅ MusicKit loaded');
-    } catch (error) {
-      console.error('❌ MusicKit error:', error);
-      setError('Failed to initialize Apple Music');
-    }
-  };
-
+export default function AppleMusicConnect({ onConnectionChange }: AppleMusicConnectProps) {
+  const [isConnecting, setIsConnecting] = useState(false);
+  
   const handleConnect = async () => {
-    if (!musicKitLoaded) {
-      alert('Apple Music is still loading...');
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const music = window.MusicKit.getInstance();
-      const userToken = await music.authorize();
-      
-      if (userToken) {
-        localStorage.setItem('apple_music_token', userToken);
-        setIsConnected(true);
-        window.location.reload();
+    setIsConnecting(true);
+    // Временная заглушка - Apple Music интеграция в разработке
+    setTimeout(() => {
+      setIsConnecting(false);
+      // Можно вызвать onConnectionChange(true) когда будет готова интеграция
+      if (onConnectionChange) {
+        // onConnectionChange(false); // Пока не подключено
       }
-    } catch (error: any) {
-      console.error('❌ Connection error:', error);
-      setError('Apple Music subscription required');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDisconnect = () => {
-    localStorage.removeItem('apple_music_token');
-    setIsConnected(false);
-    window.location.reload();
+    }, 1000);
   };
 
   return (
-    <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white/10 backdrop-blur rounded-xl p-6 border border-white/20">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-red-500 rounded-xl flex items-center justify-center">
-            <Music className="w-6 h-6 text-white" />
+          <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-red-500 rounded-lg flex items-center justify-center">
+            <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M23.994 6.124a9.23 9.23 0 00-.24-2.19c-.317-1.31-1.062-2.31-2.18-3.043a5.022 5.022 0 00-1.877-.726 10.496 10.496 0 00-1.564-.15c-.04-.003-.083-.01-.124-.013H5.99c-.152.01-.303.017-.455.026-.747.043-1.49.123-2.193.4-1.336.53-2.3 1.452-2.865 2.78-.192.448-.292.925-.363 1.408-.056.392-.088.785-.1 1.18 0 .032-.007.062-.01.093v12.223c.01.14.017.283.027.424.05.815.154 1.624.497 2.373.65 1.42 1.738 2.353 3.234 2.801.42.127.856.187 1.293.228.555.053 1.11.06 1.667.06h11.03a12.5 12.5 0 001.57-.1 5.374 5.374 0 002.162-.76c1.042-.657 1.796-1.56 2.246-2.67.252-.62.357-1.26.402-1.913.023-.326.028-.651.028-.978V6.126l-.006-.002zm-3.842 9.57c0 .606-.007 1.21-.026 1.815-.028.874-.195 1.71-.731 2.428-.58.773-1.386 1.163-2.325 1.287-.37.05-.742.062-1.115.062H7.044c-.372 0-.744-.012-1.114-.062-.94-.124-1.747-.514-2.327-1.287-.536-.718-.703-1.554-.73-2.428-.02-.604-.027-1.21-.027-1.815V8.316c0-.605.007-1.21.026-1.815.028-.874.195-1.71.731-2.428.58-.773 1.386-1.162 2.325-1.287.37-.05.742-.062 1.115-.062h8.911c.372 0 .744.012 1.114.062.94.125 1.747.514 2.327 1.287.536.718.703 1.554.73 2.428.02.605.027 1.21.027 1.815v7.378z"/>
+            </svg>
           </div>
           <div>
             <h3 className="text-white font-semibold">Apple Music</h3>
             <p className="text-gray-400 text-sm">
-              {isConnected ? 'Connected' : 'Library and playlists'}
+              {isConnecting ? "Connecting..." : "Coming soon"}
             </p>
           </div>
         </div>
-        
-        {!musicKitLoaded ? (
-          <div className="text-gray-400 text-sm">Loading...</div>
-        ) : isConnected ? (
-          <button
-            onClick={handleDisconnect}
-            className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors text-sm"
-          >
-            Disconnect
-          </button>
-        ) : (
-          <button
-            onClick={handleConnect}
-            disabled={isLoading}
-            className="px-4 py-2 bg-gradient-to-r from-pink-500 to-red-500 text-white rounded-lg hover:opacity-90 transition-opacity text-sm font-medium disabled:opacity-50"
-          >
-            {isLoading ? 'Connecting...' : 'Connect'}
-          </button>
-        )}
+        <button 
+          onClick={handleConnect}
+          disabled={true} // Временно отключено
+          className="px-4 py-2 bg-gray-600 text-gray-300 rounded-lg cursor-not-allowed opacity-50 transition-all"
+        >
+          {isConnecting ? "Connecting..." : "Connect"}
+        </button>
       </div>
-
-      {error && (
-        <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-          <p className="text-red-400 text-sm">⚠️ {error}</p>
-        </div>
-      )}
-
-      {isConnected && (
-        <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-          <p className="text-green-400 text-sm">✓ Apple Music connected</p>
-        </div>
-      )}
-
-      {!isConnected && !error && (
-        <div className="mt-4 text-gray-500 text-xs space-y-1">
-          <p className="font-medium text-gray-400">Requirements:</p>
-          <ul className="space-y-0.5">
-            <li>• Active Apple Music subscription</li>
-            <li>• Signed in to Apple ID</li>
-            <li>• iCloud Music Library enabled</li>
-          </ul>
-        </div>
-      )}
+      <p className="text-xs text-gray-500 mt-3">
+        Apple Music integration will be available in the next update
+      </p>
     </div>
   );
 }
