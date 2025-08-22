@@ -1,142 +1,126 @@
-// app/api/spotify/top-items/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { prisma } from '@/lib/prisma';
+
+async function refreshSpotifyToken(refreshToken: string) {
+  const response = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + Buffer.from(
+        `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+      ).toString('base64')
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to refresh token');
+  }
+
+  return response.json();
+}
 
 export async function GET(request: NextRequest) {
   try {
-    // Получаем сессию NextAuth
+    // Получаем сессию пользователя
     const session = await getServerSession(authOptions);
     
-    if (!session?.user?.email) {
-      console.log('❌ No session found');
-      return NextResponse.json({ 
-        error: 'Unauthorized - Please sign in',
-        tracks: { items: [] },
-        artists: { items: [] }
-      }, { status: 401 });
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Получаем пользователя из БД
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      include: {
-        musicServices: {
-          where: { service: 'SPOTIFY' }
+    // Получаем токены Spotify из БД
+    const musicService = await prisma.musicService.findUnique({
+      where: {
+        userId_service: {
+          userId: session.user.id,
+          service: 'SPOTIFY'
         }
       }
     });
 
-    if (!user) {
-      return NextResponse.json({ 
-        error: 'User not found',
-        tracks: { items: [] },
-        artists: { items: [] }
-      }, { status: 404 });
-    }
-
-    // Проверяем Spotify сервис
-    const spotifyService = user.musicServices[0];
-    
-    if (!spotifyService?.accessToken) {
-      // Проверяем старый способ через cookies (для обратной совместимости)
-      const spotifyToken = request.cookies.get('spotify_token')?.value;
-      
-      if (!spotifyToken) {
-        console.log('❌ No Spotify token found');
-        return NextResponse.json({ 
-          error: 'Spotify not connected',
-          tracks: { items: [] },
-          artists: { items: [] }
-        }, { status: 401 });
-      }
-      
-      // Используем токен из cookie и сохраняем в БД для будущего использования
-      await prisma.musicService.create({
-        data: {
-          userId: user.id,
-          service: 'SPOTIFY',
-          accessToken: spotifyToken,
-          isActive: true,
-          lastSynced: new Date()
-        }
-      }).catch(() => {
-        // Если запись уже существует, обновляем её
-        return prisma.musicService.update({
-          where: {
-            userId_service: {
-              userId: user.id,
-              service: 'SPOTIFY'
-            }
-          },
-          data: {
-            accessToken: spotifyToken,
-            isActive: true,
-            lastSynced: new Date()
-          }
-        });
-      });
-      
-      return fetchSpotifyData(spotifyToken);
+    if (!musicService || !musicService.accessToken) {
+      return NextResponse.json({ error: 'Spotify not connected' }, { status: 401 });
     }
 
     // Проверяем не истек ли токен
-    if (spotifyService.tokenExpiry && new Date(spotifyService.tokenExpiry) < new Date()) {
-      console.log('⚠️ Spotify token expired, need to refresh');
-      // TODO: Implement token refresh
-      return NextResponse.json({ 
-        error: 'Spotify token expired',
-        tracks: { items: [] },
-        artists: { items: [] }
-      }, { status: 401 });
+    let accessToken = musicService.accessToken;
+    
+    if (musicService.tokenExpiry && new Date() > musicService.tokenExpiry) {
+      console.log('[Spotify] Token expired, refreshing...');
+      
+      if (!musicService.refreshToken) {
+        return NextResponse.json({ error: 'No refresh token available' }, { status: 401 });
+      }
+
+      try {
+        const newTokens = await refreshSpotifyToken(musicService.refreshToken);
+        
+        // Обновляем токены в БД
+        await prisma.musicService.update({
+          where: { id: musicService.id },
+          data: {
+            accessToken: newTokens.access_token,
+            tokenExpiry: new Date(Date.now() + newTokens.expires_in * 1000)
+          }
+        });
+        
+        accessToken = newTokens.access_token;
+      } catch (error) {
+        console.error('[Spotify] Token refresh failed:', error);
+        return NextResponse.json({ error: 'Token refresh failed' }, { status: 401 });
+      }
     }
 
-    // Используем токен из БД
-    return fetchSpotifyData(spotifyService.accessToken);
+    // Запрашиваем данные из Spotify
+    const [topTracks, topArtists] = await Promise.all([
+      fetch('https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=medium_term', {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      }),
+      fetch('https://api.spotify.com/v1/me/top/artists?limit=50&time_range=medium_term', {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      })
+    ]);
+
+    if (!topTracks.ok || !topArtists.ok) {
+      console.error('[Spotify] API request failed');
+      return NextResponse.json({ error: 'Failed to fetch Spotify data' }, { status: 500 });
+    }
+
+    const tracksData = await topTracks.json();
+    const artistsData = await topArtists.json();
+
+    // Извлекаем жанры из артистов
+    const genres = artistsData.items.reduce((acc: Record<string, number>, artist: any) => {
+      artist.genres?.forEach((genre: string) => {
+        acc[genre] = (acc[genre] || 0) + 1;
+      });
+      return acc;
+    }, {});
+
+    // Сортируем жанры по популярности
+    const topGenres = Object.entries(genres)
+      .sort(([, a], [, b]) => (b as number) - (a as number))
+      .slice(0, 10)
+      .map(([genre]) => genre);
+
+    return NextResponse.json({
+      tracks: tracksData.items || [],
+      artists: artistsData.items || [],
+      genres: topGenres,
+      connected: true
+    });
 
   } catch (error) {
-    console.error('❌ Error in Spotify API:', error);
-    return NextResponse.json({ 
-      error: 'Internal server error',
-      tracks: { items: [] },
-      artists: { items: [] }
-    }, { status: 500 });
+    console.error('[Spotify] Error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
-}
-
-async function fetchSpotifyData(spotifyToken: string) {
-  console.log('🎵 Fetching Spotify top items...');
-
-  // Получаем топ треки и артистов
-  const [tracksResponse, artistsResponse] = await Promise.all([
-    fetch('https://api.spotify.com/v1/me/top/tracks?limit=20&time_range=medium_term', {
-      headers: { 'Authorization': `Bearer ${spotifyToken}` }
-    }),
-    fetch('https://api.spotify.com/v1/me/top/artists?limit=20&time_range=medium_term', {
-      headers: { 'Authorization': `Bearer ${spotifyToken}` }
-    })
-  ]);
-
-  if (!tracksResponse.ok || !artistsResponse.ok) {
-    if (tracksResponse.status === 401 || artistsResponse.status === 401) {
-      console.log('⚠️ Spotify token expired');
-      return NextResponse.json({ 
-        error: 'Spotify token expired',
-        tracks: { items: [] },
-        artists: { items: [] }
-      }, { status: 401 });
-    }
-    
-    throw new Error('Failed to fetch from Spotify');
-  }
-
-  const [tracks, artists] = await Promise.all([
-    tracksResponse.json(),
-    artistsResponse.json()
-  ]);
-
-  console.log(`✅ Got ${tracks.items?.length || 0} tracks and ${artists.items?.length || 0} artists`);
-
-  return NextResponse.json({ tracks, artists });
 }

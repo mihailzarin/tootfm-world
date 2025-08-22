@@ -25,6 +25,7 @@ model User {
   // Дополнительные поля для tootFM
   worldId       String?   @unique
   googleId      String?   @unique
+  spotifyId     String?   @unique  // НОВОЕ: для быстрого поиска
   displayName   String?
   avatar        String?
   verified      Boolean   @default(false)
@@ -63,6 +64,7 @@ model Account {
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 model Session {
@@ -71,6 +73,8 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
 }
 
 model VerificationToken {
@@ -88,7 +92,7 @@ model VerificationToken {
 model MusicProfile {
   id              String   @id @default(cuid())
   userId          String   @unique
-  user            User     @relation(fields: [userId], references: [id])
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   // Объединенные данные из всех сервисов
   unifiedTopTracks    Json?    // Дедуплицированные топ треки
@@ -115,7 +119,7 @@ model MusicProfile {
 model MusicService {
   id            String   @id @default(cuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id])
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   service       ServiceType  // SPOTIFY, LASTFM, APPLE
   
@@ -129,7 +133,7 @@ model MusicService {
   lastfmUsername String?
   lastfmSession  String?  // Session key
   
-  // Apple Music специфичные поля
+  // Apple Music специфичные поля  
   appleUserId    String?
   appleToken     String?  @db.Text
   
@@ -141,6 +145,8 @@ model MusicService {
   updatedAt      DateTime @updatedAt
   
   @@unique([userId, service])
+  @@index([userId])
+  @@index([service])
 }
 
 enum ServiceType {
@@ -185,16 +191,19 @@ model Party {
   // Связи
   members       PartyMember[]
   tracks        Track[]
+  
+  @@index([code])
+  @@index([creatorId])
 }
 
 model PartyMember {
   id        String   @id @default(cuid())
   
   partyId   String
-  party     Party    @relation(fields: [partyId], references: [id])
+  party     Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
   
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   role      MemberRole @default(MEMBER)
   joinedAt  DateTime @default(now())
@@ -203,6 +212,8 @@ model PartyMember {
   contributionScore Float? // Насколько учтены вкусы участника
   
   @@unique([partyId, userId])
+  @@index([partyId])
+  @@index([userId])
 }
 
 enum MemberRole {
@@ -233,7 +244,7 @@ model Track {
   
   // Party связь
   partyId       String
-  party         Party    @relation(fields: [partyId], references: [id])
+  party         Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
   
   // Голосование (если включено)
   voteCount     Int      @default(0)
@@ -246,20 +257,23 @@ model Track {
   
   @@index([partyId, position])
   @@index([isrc])
+  @@index([spotifyId])
 }
 
 model Vote {
   id        String   @id @default(cuid())
   
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   trackId   String
-  track     Track    @relation(fields: [trackId], references: [id])
+  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
   
   value     Int      // +1 или -1
   
   createdAt DateTime @default(now())
   
   @@unique([userId, trackId])
+  @@index([userId])
+  @@index([trackId])
 }

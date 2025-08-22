@@ -1,27 +1,33 @@
-import NextAuth from "next-auth";
+import { DefaultSession } from "next-auth";
 
 declare module "next-auth" {
   interface Session {
     user: {
       id: string;
-      email: string;
-      name?: string;
-      image?: string;
-    };
+      googleId?: string | null;
+      worldId?: string | null;
+      verified?: boolean;
+      connectedServices?: {
+        google: boolean;
+        spotify: boolean;
+        lastfm: boolean;
+        apple: boolean;
+      };
+    } & DefaultSession["user"];
   }
 
   interface User {
     id: string;
-    email: string;
-    name?: string;
-    image?: string;
-    googleId?: string;
-    worldId?: string;
+    googleId?: string | null;
+    worldId?: string | null;
+    verified?: boolean;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
-    userId?: string;
+    id?: string;
+    provider?: string;
+    providerAccountId?: string;
   }
 }
