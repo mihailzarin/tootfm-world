@@ -3,25 +3,6 @@ import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 
-// Validate required environment variables
-const requiredEnvVars = {
-  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
-  NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-};
-
-// Check for missing environment variables
-const missingEnvVars = Object.entries(requiredEnvVars)
-  .filter(([_, value]) => !value || value === "your-google-client-id" || value === "your-nextauth-secret-key-here")
-  .map(([key]) => key);
-
-if (missingEnvVars.length > 0) {
-  console.error("❌ Missing or invalid environment variables:", missingEnvVars);
-  console.error("Please set the following environment variables:");
-  missingEnvVars.forEach(key => console.error(`  - ${key}`));
-}
-
 const handler = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [
@@ -131,5 +112,25 @@ const handler = NextAuth({
     }
   }
 });
+
+// Runtime environment validation (only in development)
+if (process.env.NODE_ENV === 'development') {
+  const requiredEnvVars = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
+  };
+
+  const missingEnvVars = Object.entries(requiredEnvVars)
+    .filter(([_, value]) => !value || value === "your-google-client-id" || value === "your-nextauth-secret-key-here")
+    .map(([key]) => key);
+
+  if (missingEnvVars.length > 0) {
+    console.error("❌ Missing or invalid environment variables:", missingEnvVars);
+    console.error("Please set the following environment variables:");
+    missingEnvVars.forEach(key => console.error(`  - ${key}`));
+  }
+}
 
 export { handler as GET, handler as POST };

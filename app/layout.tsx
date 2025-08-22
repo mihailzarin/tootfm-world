@@ -6,7 +6,11 @@ export const metadata = {
   description: 'Create perfect party playlists by analyzing everyone\'s music taste with AI-powered recommendations',
   keywords: 'music, playlist, party, spotify, lastfm, apple music, ai, recommendations',
   authors: [{ name: 'tootFM Team' }],
-  viewport: 'width=device-width, initial-scale=1',
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
 }
 
 export default function RootLayout({

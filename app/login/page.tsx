@@ -1,24 +1,25 @@
 "use client";
 
+import { Suspense } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
 import { Music, ArrowLeft, AlertCircle } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
-export default function LoginPage() {
+// Component that uses useSearchParams
+function LoginContent() {
   const { login, isAuthenticated } = useAuth();
-  const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Check for authentication errors
   useEffect(() => {
-    const errorParam = searchParams.get('error');
+    const urlParams = new URLSearchParams(window.location.search);
+    const errorParam = urlParams.get('error');
     if (errorParam) {
       setError(getErrorMessage(errorParam));
     }
-  }, [searchParams]);
+  }, []);
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -143,5 +144,23 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Loading component for Suspense fallback
+function LoginLoading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-white text-lg">Loading...</div>
+    </div>
+  );
+}
+
+// Main page component with Suspense boundary
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginLoading />}>
+      <LoginContent />
+    </Suspense>
   );
 }
