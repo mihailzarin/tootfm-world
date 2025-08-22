@@ -49,6 +49,7 @@ model Party {
   name        String
   description String?
   isActive    Boolean       @default(true)
+  isPublic    Boolean       @default(false)
   creatorId   String
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt

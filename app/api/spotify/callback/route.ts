@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findOrCreateUserByService } from "@/lib/auth/server-auth";
 import { AUTH_CONFIG, getRedirectUrl, getCookieOptions } from "@/lib/auth/config";
+import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
   try {
@@ -66,18 +67,87 @@ export async function GET(request: NextRequest) {
     const profileData = await profileResponse.json();
     console.log('✅ Spotify profile fetched:', profileData.display_name);
 
-    // Find or create user in our database
-    const expiresAt = new Date(Date.now() + (tokenData.expires_in * 1000));
-    
-    const user = await findOrCreateUserByService('spotify', {
-      id: profileData.id,
-      email: profileData.email,
-      displayName: profileData.display_name,
-      avatar: profileData.images?.[0]?.url,
-      accessToken: tokenData.access_token,
-      refreshToken: tokenData.refresh_token,
-      expiresAt: expiresAt
-    });
+    // Check for existing user session first
+    const existingUserId = request.cookies.get(AUTH_CONFIG.COOKIES.USER_ID)?.value;
+    let user;
+
+    if (existingUserId) {
+      console.log('🔍 Found existing user session:', existingUserId);
+      
+      // Find existing user
+      const existingUser = await prisma.user.findUnique({
+        where: { worldId: existingUserId },
+        include: {
+          musicServices: true
+        }
+      });
+
+      if (existingUser) {
+        console.log('✅ Updating existing user with Spotify data');
+        
+        // Check if Spotify service already exists
+        const existingSpotifyService = existingUser.musicServices.find(
+          service => service.service === 'SPOTIFY'
+        );
+
+        if (existingSpotifyService) {
+          // Update existing Spotify service
+          await prisma.musicService.update({
+            where: { id: existingSpotifyService.id },
+            data: {
+              accessToken: tokenData.access_token,
+              refreshToken: tokenData.refresh_token,
+              expiresAt: new Date(Date.now() + (tokenData.expires_in * 1000)),
+              lastSyncAt: new Date()
+            }
+          });
+        } else {
+          // Create new Spotify service for existing user
+          await prisma.musicService.create({
+            data: {
+              userId: existingUser.id,
+              service: 'SPOTIFY',
+              serviceUserId: profileData.id,
+              serviceUserName: profileData.display_name,
+              serviceEmail: profileData.email,
+              accessToken: tokenData.access_token,
+              refreshToken: tokenData.refresh_token,
+              expiresAt: new Date(Date.now() + (tokenData.expires_in * 1000))
+            }
+          });
+        }
+
+        // Update user last login
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { 
+            lastLogin: new Date(),
+            level: existingUser.level === 'guest' ? 'music' : existingUser.level
+          }
+        });
+
+        user = {
+          id: existingUser.id,
+          displayName: existingUser.displayName,
+          level: existingUser.level === 'guest' ? 'music' : existingUser.level
+        };
+      }
+    }
+
+    // If no existing user found, create new user
+    if (!user) {
+      console.log('👤 Creating new user via Spotify');
+      const newUser = await findOrCreateUserByService('spotify', {
+        id: profileData.id,
+        email: profileData.email,
+        displayName: profileData.display_name,
+        avatar: profileData.images?.[0]?.url,
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        expiresAt: new Date(Date.now() + (tokenData.expires_in * 1000))
+      });
+      user = newUser;
+    }
 
     console.log('✅ User authenticated:', user.displayName);
 
@@ -97,7 +167,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    response.cookies.set(AUTH_CONFIG.COOKIES.SPOTIFY_EXPIRES, expiresAt.toISOString(), {
+    response.cookies.set(AUTH_CONFIG.COOKIES.SPOTIFY_EXPIRES, new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString(), {
       ...getCookieOptions(false),
       maxAge: tokenData.expires_in || AUTH_CONFIG.EXPIRATION.ACCESS_TOKEN
     });

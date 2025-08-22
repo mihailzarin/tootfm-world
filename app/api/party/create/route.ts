@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
         name: name.trim(),
         description: description?.trim() || '',
         isActive: true,
+        isPublic: isPublic,
         creatorId: user.id
       },
       include: {
