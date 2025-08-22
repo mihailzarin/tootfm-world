@@ -1,220 +1,122 @@
-// lib/auth/server-auth.ts
-// Server-side auth functions (use cookies)
-
-import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
-export interface TootUser {
+export interface UserSession {
   id: string;
-  primaryId: string;
-  displayName: string;
-  avatar?: string;
-  email?: string;
-  level: 'guest' | 'music' | 'verified';
-  services: {
-    spotify?: { id: string; email?: string; connected: Date };
-    lastfm?: { username: string; connected: Date };
-    apple?: { id: string; email?: string; connected: Date };
-  };
-  worldId?: string;
+  email: string | null;
+  name: string | null;
+  image: string | null;
+  worldId: string | null;
+  displayName: string | null;
+  avatar: string | null;
   verified: boolean;
-  createdAt: Date;
-  lastSeen: Date;
   partiesCreated: number;
-  tracksAdded: number;
+  partiesJoined: number;
+  votesCount: number;
 }
 
-export async function getCurrentUser(): Promise<TootUser | null> {
+export async function getCurrentUser(): Promise<UserSession | null> {
   try {
-    const cookieStore = await cookies();
-    const userId = cookieStore.get('tootfm_uid')?.value;
+    const session = await getServerSession(authOptions);
     
-    if (!userId) {
+    if (!session?.user?.email) {
       return null;
     }
-    
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
+
+    const dbUser = await prisma.user.findUnique({
+      where: {
+        email: session.user.email
+      },
       include: {
-        musicServices: true,
         _count: {
           select: {
-            createdParties: true,
-            addedTracks: true
+            parties: true,      // Созданные вечеринки
+            memberships: true,  // Участие в вечеринках
+            votes: true        // Голоса за треки
           }
         }
       }
     });
-    
-    if (!user) {
+
+    if (!dbUser) {
       return null;
     }
-    
-    return formatUser(user);
+
+    return {
+      id: dbUser.id,
+      email: dbUser.email,
+      name: dbUser.name,
+      image: dbUser.image,
+      worldId: dbUser.worldId,
+      displayName: dbUser.displayName,
+      avatar: dbUser.avatar,
+      verified: dbUser.verified,
+      partiesCreated: dbUser._count?.parties || 0,
+      partiesJoined: dbUser._count?.memberships || 0,
+      votesCount: dbUser._count?.votes || 0
+    };
   } catch (error) {
     console.error('Error getting current user:', error);
     return null;
   }
 }
 
-export async function findOrCreateUserByService(
-  service: 'spotify' | 'apple' | 'lastfm',
-  serviceData: {
-    id: string;
-    email?: string;
-    username?: string;
-    displayName?: string;
-    avatar?: string;
-    accessToken?: string;
-    refreshToken?: string;
-    expiresAt?: Date;
-  }
-): Promise<TootUser> {
-  
-  const existingService = await prisma.musicService.findFirst({
-    where: {
-      service: service.toUpperCase() as any,
-      serviceUserId: serviceData.id
-    },
-    include: {
-      user: {
-        include: {
-          musicServices: true,
-          _count: {
-            select: {
-              createdParties: true,
-              addedTracks: true
-            }
+export async function createUserFromWorldID(worldId: string, verified: boolean) {
+  const existingUser = await prisma.user.findUnique({
+    where: { worldId }
+  });
+
+  if (existingUser) {
+    return await prisma.user.update({
+      where: { worldId },
+      data: { 
+        verified,
+        updatedAt: new Date()
+      },
+      include: {
+        _count: {
+          select: {
+            parties: true,
+            memberships: true,
+            votes: true
           }
         }
       }
-    }
-  });
-  
-  if (existingService) {
-    console.log(`Found existing user via ${service}:`, existingService.user.displayName);
-    
-    await prisma.musicService.update({
-      where: { id: existingService.id },
-      data: {
-        accessToken: serviceData.accessToken,
-        refreshToken: serviceData.refreshToken,
-        expiresAt: serviceData.expiresAt,
-        lastSyncAt: new Date()
-      }
     });
-    
-    await prisma.user.update({
-      where: { id: existingService.user.id },
-      data: { updatedAt: new Date() }
-    });
-    
-    await saveUserSession(existingService.user.id);
-    
-    return formatUser(existingService.user);
   }
-  
-  const primaryId = generatePrimaryId();
-  const tempWorldId = `temp_${primaryId}`;
-  
-  console.log(`Creating new user via ${service}:`, serviceData.displayName);
-  
+
   const newUser = await prisma.user.create({
     data: {
-      worldId: tempWorldId,
-      primaryId: primaryId,
-      displayName: serviceData.displayName || serviceData.username || 'Music Lover',
-      avatar: serviceData.avatar,
-      email: serviceData.email,
-      level: 'music',
-      verified: false,
-      musicServices: {
-        create: {
-          service: service.toUpperCase() as any,
-          serviceUserId: serviceData.id,
-          serviceUserName: serviceData.username || serviceData.displayName,
-          serviceEmail: serviceData.email,
-          accessToken: serviceData.accessToken,
-          refreshToken: serviceData.refreshToken,
-          expiresAt: serviceData.expiresAt
-        }
-      }
+      worldId,
+      verified,
+      displayName: `User_${worldId.slice(-6)}`,
+      avatar: `https://api.dicebear.com/7.x/shapes/svg?seed=${worldId}`
     },
     include: {
-      musicServices: true,
       _count: {
         select: {
-          createdParties: true,
-          addedTracks: true
+          parties: true,
+          memberships: true,
+          votes: true
         }
       }
     }
   });
-  
+
   console.log('✅ New user created:', newUser.displayName);
   
-  await saveUserSession(newUser.id);
-  
-  return formatUser(newUser);
-}
-
-function generatePrimaryId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 8);
-  return `usr_${timestamp}${random}`;
-}
-
-async function saveUserSession(userId: string): Promise<void> {
-  const cookieStore = await cookies();
-  
-  cookieStore.set('tootfm_uid', userId, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 365
-  });
-  
-  cookieStore.set('tootfm_user', userId, {
-    httpOnly: false,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 365
-  });
-}
-
-function formatUser(dbUser: any): TootUser {
-  const services: any = {};
-  
-  dbUser.musicServices?.forEach((ms: any) => {
-    const serviceName = ms.service.toLowerCase();
-    services[serviceName] = {
-      id: ms.serviceUserId,
-      email: ms.serviceEmail,
-      username: ms.serviceUserName,
-      connected: ms.connectedAt
-    };
-  });
-  
-  let level: TootUser['level'] = 'guest';
-  if (dbUser.verified && dbUser.worldId && !dbUser.worldId.startsWith('temp_')) {
-    level = 'verified';
-  } else if (dbUser.musicServices?.length > 0) {
-    level = 'music';
-  }
-  
   return {
-    id: dbUser.id,
-    primaryId: dbUser.primaryId || dbUser.id,
-    displayName: dbUser.displayName || 'Music Lover',
-    avatar: dbUser.avatar,
-    email: dbUser.email,
-    level,
-    services,
-    worldId: dbUser.worldId?.startsWith('temp_') ? undefined : dbUser.worldId,
-    verified: dbUser.verified,
-    createdAt: dbUser.createdAt,
-    lastSeen: dbUser.updatedAt,
-    partiesCreated: dbUser._count?.createdParties || 0,
-    tracksAdded: dbUser._count?.addedTracks || 0
+    id: newUser.id,
+    email: newUser.email,
+    name: newUser.name,
+    image: newUser.image,
+    worldId: newUser.worldId,
+    displayName: newUser.displayName,
+    avatar: newUser.avatar,
+    verified: newUser.verified,
+    partiesCreated: newUser._count?.parties || 0,
+    partiesJoined: newUser._count?.memberships || 0,
+    votesCount: newUser._count?.votes || 0
   };
 }

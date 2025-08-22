@@ -1,16 +1,12 @@
-// src/components/party/PartyPlayer.tsx
-// ИСПРАВЛЕННЫЙ компонент без ошибок рендеринга
-
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Play, 
   Pause, 
-  SkipForward, 
   SkipBack, 
+  SkipForward, 
   Volume2, 
-  Music,
   AlertCircle,
   Loader2,
   Shuffle,
@@ -27,409 +23,216 @@ interface PartyPlayerProps {
     album?: string;
     albumArt?: string;
     duration: number;
+    previewUrl?: string;
+    matchScore: number;
     voteCount: number;
   }>;
   partyCode: string;
-  isHost?: boolean;
+  isHost: boolean;
 }
 
-export default function PartyPlayer({ tracks, partyCode, isHost = false }: PartyPlayerProps) {
+export default function PartyPlayer({ tracks, partyCode, isHost }: PartyPlayerProps) {
   const [spotifyToken, setSpotifyToken] = useState<string | null>(null);
-  const [error, setError] = useState<string>('');
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-  const [showVolume, setShowVolume] = useState(false);
+  const [error, setError] = useState('');
   const [isShuffled, setIsShuffled] = useState(false);
-  const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('all');
+  const [isRepeating, setIsRepeating] = useState(false);
 
-  // Получаем токен из cookies
+  // Получаем токен из localStorage
   useEffect(() => {
-    const checkToken = async () => {
-      try {
-        // Проверяем статус токена
-        const response = await fetch('/api/spotify/refresh', {
-          method: 'GET'
-        });
-        
-        const data = await response.json();
-        
-        if (!data.valid) {
-          setError('Please connect Spotify to play music');
-          return;
-        }
-
-        // Если токен скоро истекает, обновляем
-        if (data.minutesLeft < 5 && data.canRefresh) {
-          console.log('🔄 Token expiring soon, refreshing...');
-          const refreshResponse = await fetch('/api/spotify/refresh', {
-            method: 'POST'
-          });
-          
-          if (!refreshResponse.ok) {
-            setError('Failed to refresh Spotify token');
-            return;
-          }
-        }
-
-        // Получаем токен для SDK
-        const tokenResponse = await fetch('/api/spotify/token');
-        const tokenData = await tokenResponse.json();
-        
-        if (tokenData.token) {
-          setSpotifyToken(tokenData.token);
-        } else {
-          setError('No Spotify token available');
-        }
-      } catch (err) {
-        console.error('❌ Token check failed:', err);
-        setError('Failed to initialize player');
+    const checkToken = () => {
+      const token = localStorage.getItem('spotify_access_token');
+      const expiry = localStorage.getItem('spotify_token_expiry');
+      
+      if (token && expiry && Date.now() < parseInt(expiry)) {
+        setSpotifyToken(token);
+      } else {
+        setSpotifyToken(null);
+        setError('Spotify Premium required for playback');
       }
     };
 
     checkToken();
-    
-    // Проверяем токен каждые 30 минут
     const interval = setInterval(checkToken, 30 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Инициализируем плеер
-  const player = useSpotifyPlayer({
-    token: spotifyToken,
-    onError: (err) => {
-      setError(err);
-      console.error('Player error:', err);
-    },
-    onReady: (deviceId) => {
-      console.log('🎵 Player ready, device:', deviceId);
+  // Используем хук правильно - передаем только токен
+  const player = useSpotifyPlayer(spotifyToken);
+
+  // Обрабатываем готовность плеера
+  useEffect(() => {
+    if (player.isReady && player.deviceId) {
+      console.log('🎵 Player ready, device:', player.deviceId);
       setError('');
       
-      // Автоматически переносим воспроизведение на веб-плеер
-      if (isHost) {
-        player.transferPlayback(false);
+      // Если есть треки, начинаем воспроизведение
+      if (tracks.length > 0 && tracks[0].spotifyId) {
+        playTrack(0);
       }
     }
-  });
+  }, [player.isReady, player.deviceId]);
 
-  // Сортируем треки по голосам
-  const sortedTracks = [...tracks].sort((a, b) => b.voteCount - a.voteCount);
-
-  // Форматируем URIs для Spotify
-  const trackUris = sortedTracks.map(track => `spotify:track:${track.spotifyId}`);
-
-  // Играть конкретный трек
   const playTrack = async (index: number) => {
-    if (!player.is_ready) {
-      setError('Player not ready. Please wait...');
-      return;
-    }
+    const track = tracks[index];
+    if (!track?.spotifyId || !player.play) return;
 
-    setCurrentTrackIndex(index);
-    const uri = trackUris[index];
-    
-    if (uri) {
-      await player.play(uri);
-    }
-  };
-
-  // Играть всю очередь
-  const playQueue = async () => {
-    if (!player.is_ready || trackUris.length === 0) {
-      setError('No tracks in queue or player not ready');
-      return;
-    }
-
-    const urisToPlay = isShuffled ? shuffleArray([...trackUris]) : trackUris;
-    await player.playTracks(urisToPlay, currentTrackIndex);
-  };
-
-  // Следующий трек
-  const handleNext = async () => {
-    if (repeatMode === 'one') {
-      await player.seek(0);
-      return;
-    }
-
-    const nextIndex = (currentTrackIndex + 1) % sortedTracks.length;
-    setCurrentTrackIndex(nextIndex);
-    
-    if (nextIndex === 0 && repeatMode === 'off') {
-      await player.pause();
-    } else {
-      await player.next();
-    }
-  };
-
-  // Предыдущий трек
-  const handlePrevious = async () => {
-    if (player.position > 3000) {
-      // Если прошло больше 3 секунд, начинаем трек сначала
-      await player.seek(0);
-    } else {
-      const prevIndex = currentTrackIndex === 0 
-        ? sortedTracks.length - 1 
-        : currentTrackIndex - 1;
-      setCurrentTrackIndex(prevIndex);
-      await player.previous();
-    }
-  };
-
-  // Shuffle helper
-  const shuffleArray = <T,>(array: T[]): T[] => {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  };
-
-  // ИСПРАВЛЕНО: Безопасное получение данных текущего трека
-  const getSpotifyTrackInfo = () => {
-    if (!player.current_track) return null;
-    
     try {
-      // Spotify track имеет структуру с вложенными объектами
-      const track = player.current_track;
-      return {
-        name: track.name || 'Unknown Track',
-        artist: track.artists?.[0]?.name || 'Unknown Artist',
-        album: track.album?.name || 'Unknown Album',
-        albumArt: track.album?.images?.[0]?.url || null
-      };
-    } catch (e) {
-      console.error('Error parsing Spotify track:', e);
-      return null;
+      await player.play(`spotify:track:${track.spotifyId}`);
+      setCurrentTrackIndex(index);
+    } catch (err) {
+      console.error('Failed to play track:', err);
+      setError('Failed to play track');
     }
   };
 
-  // Текущий трек - либо от Spotify SDK, либо из нашего списка
-  const spotifyTrackInfo = getSpotifyTrackInfo();
-  const currentTrack = spotifyTrackInfo || sortedTracks[currentTrackIndex];
+  const handleNext = () => {
+    if (currentTrackIndex < tracks.length - 1) {
+      playTrack(currentTrackIndex + 1);
+    } else if (isRepeating) {
+      playTrack(0);
+    }
+  };
 
-  // Progress bar percentage
-  const progress = player.duration > 0 
-    ? (player.position / player.duration) * 100 
-    : 0;
+  const handlePrevious = () => {
+    if (currentTrackIndex > 0) {
+      playTrack(currentTrackIndex - 1);
+    }
+  };
 
-  // Если нет токена или Spotify не подключен
-  if (error === 'Please connect Spotify to play music') {
+  const formatTime = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  if (!spotifyToken) {
     return (
-      <div className="bg-gradient-to-br from-gray-900 to-black rounded-2xl p-6 text-white">
-        <div className="flex items-center justify-center flex-col gap-4 py-8">
-          <Music className="w-16 h-16 text-gray-400" />
-          <p className="text-gray-400">Connect Spotify to play music</p>
-          <a 
-            href="/api/spotify/auth" 
-            className="px-6 py-2 bg-green-500 text-black font-bold rounded-full hover:bg-green-400 transition"
-          >
-            Connect Spotify
-          </a>
+      <div className="bg-white/10 backdrop-blur rounded-xl p-6 border border-white/20">
+        <div className="flex items-center gap-3 text-yellow-400">
+          <AlertCircle className="w-5 h-5" />
+          <p>Connect Spotify Premium to play full tracks</p>
         </div>
       </div>
     );
   }
 
+  if (!player.isReady) {
+    return (
+      <div className="bg-white/10 backdrop-blur rounded-xl p-6 border border-white/20">
+        <div className="flex items-center gap-3">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <p>Initializing Spotify Player...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const currentTrack = tracks[currentTrackIndex];
+
   return (
-    <div className="bg-gradient-to-br from-purple-900 via-purple-800 to-black rounded-2xl p-6 text-white">
-      {/* Error message */}
-      {error && error !== 'Please connect Spotify to play music' && (
-        <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 text-red-400" />
-          <span className="text-sm">{error}</span>
-        </div>
-      )}
-
-      {/* Player status */}
-      {!player.is_ready && spotifyToken && (
-        <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg flex items-center gap-2">
-          <Loader2 className="w-5 h-5 text-yellow-400 animate-spin" />
-          <span className="text-sm">Initializing player...</span>
-        </div>
-      )}
-
-      {/* Current track info - ИСПРАВЛЕНО */}
-      <div className="mb-6">
-        {currentTrack ? (
+    <div className="bg-white/10 backdrop-blur rounded-xl p-6 border border-white/20">
+      {/* Current Track Display */}
+      {currentTrack && (
+        <div className="mb-6">
           <div className="flex items-center gap-4">
-            {/* Album art */}
-            <div className="w-20 h-20 bg-purple-700/50 rounded-lg flex items-center justify-center flex-shrink-0">
-              {currentTrack.albumArt ? (
-                <img 
-                  src={currentTrack.albumArt}
-                  alt={currentTrack.name}
-                  className="w-full h-full object-cover rounded-lg"
-                />
-              ) : (
-                <Music className="w-10 h-10 text-purple-300" />
-              )}
-            </div>
-            
-            {/* Track details - ИСПРАВЛЕНО */}
-            <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-lg truncate">
-                {currentTrack.name}
-              </h3>
-              <p className="text-purple-200 text-sm truncate">
-                {currentTrack.artist}
-              </p>
-              {currentTrack.album && (
-                <p className="text-purple-300 text-xs truncate">
-                  {currentTrack.album}
-                </p>
-              )}
-            </div>
-
-            {/* Vote count - только для треков из списка */}
-            {'voteCount' in currentTrack && (
-              <div className="text-center">
-                <div className="text-2xl font-bold">{currentTrack.voteCount}</div>
-                <div className="text-xs text-purple-300">votes</div>
-              </div>
+            {currentTrack.albumArt && (
+              <img 
+                src={currentTrack.albumArt} 
+                alt={currentTrack.album}
+                className="w-16 h-16 rounded-lg"
+              />
             )}
+            <div className="flex-1">
+              <h4 className="text-white font-semibold">{currentTrack.name}</h4>
+              <p className="text-gray-400 text-sm">{currentTrack.artist}</p>
+            </div>
           </div>
-        ) : (
-          <div className="text-center py-8 text-gray-400">
-            <Music className="w-12 h-12 mx-auto mb-2" />
-            <p>No track selected</p>
-          </div>
-        )}
-      </div>
 
-      {/* Progress bar */}
-      <div className="mb-4">
-        <div className="flex items-center gap-2 text-xs text-purple-300 mb-1">
-          <span>{player.formatTime(player.position)}</span>
-          <div className="flex-1 bg-purple-700/30 rounded-full h-1 overflow-hidden">
-            <div 
-              className="bg-gradient-to-r from-purple-400 to-pink-400 h-full rounded-full transition-all duration-1000"
-              style={{ width: `${progress}%` }}
-            />
+          {/* Progress Bar */}
+          <div className="mt-4">
+            <div className="flex justify-between text-xs text-gray-400 mb-1">
+              <span>{formatTime(player.position)}</span>
+              <span>{formatTime(player.duration)}</span>
+            </div>
+            <div className="w-full bg-white/20 rounded-full h-1">
+              <div 
+                className="bg-green-500 h-1 rounded-full transition-all"
+                style={{ 
+                  width: `${player.duration ? (player.position / player.duration) * 100 : 0}%` 
+                }}
+              />
+            </div>
           </div>
-          <span>{player.formatTime(player.duration)}</span>
         </div>
-      </div>
+      )}
 
-      {/* Main controls */}
-      <div className="flex items-center justify-center gap-4 mb-4">
-        {/* Shuffle */}
+      {/* Player Controls */}
+      <div className="flex items-center justify-center gap-4">
         <button
           onClick={() => setIsShuffled(!isShuffled)}
-          className={`p-2 rounded-full transition ${
-            isShuffled 
-              ? 'text-purple-300 bg-purple-700/50' 
-              : 'text-gray-400 hover:text-white'
+          className={`p-2 rounded-lg transition ${
+            isShuffled ? 'text-green-500' : 'text-gray-400 hover:text-white'
           }`}
-          title="Shuffle"
         >
-          <Shuffle className="w-5 h-5" />
+          <Shuffle className="w-4 h-4" />
         </button>
 
-        {/* Previous */}
         <button
           onClick={handlePrevious}
-          disabled={!player.is_ready}
-          className="p-3 rounded-full bg-purple-700/50 hover:bg-purple-600/50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-2 text-white hover:bg-white/10 rounded-lg transition"
+          disabled={currentTrackIndex === 0}
         >
-          <SkipBack className="w-6 h-6" />
+          <SkipBack className="w-5 h-5" />
         </button>
 
-        {/* Play/Pause */}
         <button
-          onClick={() => player.is_playing ? player.pause() : playQueue()}
-          disabled={!player.is_ready || sortedTracks.length === 0}
-          className="p-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={() => player.isPlaying ? player.pause() : player.play()}
+          className="p-3 bg-green-500 hover:bg-green-400 rounded-full text-black transition"
         >
-          {player.is_playing ? (
-            <Pause className="w-8 h-8" />
+          {player.isPlaying ? (
+            <Pause className="w-6 h-6" />
           ) : (
-            <Play className="w-8 h-8 ml-1" />
+            <Play className="w-6 h-6 ml-0.5" />
           )}
         </button>
 
-        {/* Next */}
         <button
           onClick={handleNext}
-          disabled={!player.is_ready}
-          className="p-3 rounded-full bg-purple-700/50 hover:bg-purple-600/50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-2 text-white hover:bg-white/10 rounded-lg transition"
+          disabled={currentTrackIndex === tracks.length - 1 && !isRepeating}
         >
-          <SkipForward className="w-6 h-6" />
+          <SkipForward className="w-5 h-5" />
         </button>
 
-        {/* Repeat */}
         <button
-          onClick={() => {
-            const modes: Array<'off' | 'all' | 'one'> = ['off', 'all', 'one'];
-            const currentIndex = modes.indexOf(repeatMode);
-            setRepeatMode(modes[(currentIndex + 1) % modes.length]);
-          }}
-          className={`p-2 rounded-full transition relative ${
-            repeatMode !== 'off'
-              ? 'text-purple-300 bg-purple-700/50' 
-              : 'text-gray-400 hover:text-white'
+          onClick={() => setIsRepeating(!isRepeating)}
+          className={`p-2 rounded-lg transition ${
+            isRepeating ? 'text-green-500' : 'text-gray-400 hover:text-white'
           }`}
-          title={`Repeat: ${repeatMode}`}
         >
-          <Repeat className="w-5 h-5" />
-          {repeatMode === 'one' && (
-            <span className="absolute -top-1 -right-1 text-xs bg-purple-500 rounded-full w-4 h-4 flex items-center justify-center">
-              1
-            </span>
-          )}
+          <Repeat className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Volume control */}
-      <div className="flex items-center justify-center gap-2">
-        <button
-          onClick={() => setShowVolume(!showVolume)}
-          className="p-2 rounded-full hover:bg-purple-700/50 transition"
-        >
-          <Volume2 className="w-5 h-5" />
-        </button>
-        
-        {showVolume && (
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={player.volume * 100}
-            onChange={(e) => player.setVolume(parseInt(e.target.value) / 100)}
-            className="w-32 accent-purple-500"
-          />
-        )}
+      {/* Volume Control */}
+      <div className="flex items-center gap-3 mt-4">
+        <Volume2 className="w-4 h-4 text-gray-400" />
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={player.volume * 100}
+          onChange={(e) => player.setVolume(parseInt(e.target.value) / 100)}
+          className="flex-1 h-1 bg-white/20 rounded-full appearance-none cursor-pointer"
+        />
       </div>
 
-      {/* Queue preview */}
-      {sortedTracks.length > 0 && (
-        <div className="mt-6 pt-6 border-t border-purple-700/50">
-          <h4 className="text-sm font-bold text-purple-300 mb-2">
-            Up Next ({sortedTracks.length} tracks)
-          </h4>
-          <div className="space-y-1 max-h-32 overflow-y-auto">
-            {sortedTracks.slice(0, 5).map((track, index) => (
-              <button
-                key={track.id}
-                onClick={() => playTrack(index)}
-                className={`w-full text-left p-2 rounded hover:bg-purple-700/30 transition flex items-center gap-2 ${
-                  index === currentTrackIndex ? 'bg-purple-700/50' : ''
-                }`}
-              >
-                <span className="text-xs text-purple-400 w-6">{index + 1}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm truncate">{track.name}</p>
-                  <p className="text-xs text-purple-300 truncate">{track.artist}</p>
-                </div>
-                <span className="text-xs text-purple-400">{track.voteCount} votes</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Device info */}
-      {player.is_ready && (
-        <div className="mt-4 text-center text-xs text-purple-400">
-          Playing on: tootFM Web Player
+      {/* Error Display */}
+      {error && (
+        <div className="mt-4 p-3 bg-red-500/20 rounded-lg">
+          <p className="text-red-400 text-sm">{error}</p>
         </div>
       )}
     </div>

@@ -1,5 +1,30 @@
 import { useState, useEffect, useCallback } from 'react';
 
+// Определяем интерфейсы
+interface Participant {
+  id: string;
+  name: string;
+  isHost: boolean;
+}
+
+interface Track {
+  id?: string;
+  name: string;
+  artist: string;
+  album?: string;
+  votes: number;
+  votedBy: string[];
+  addedBy: string;
+  [key: string]: any;
+}
+
+interface PartyState {
+  participants: Participant[];
+  queue: Track[];
+  currentTrack: Track | null;
+  isPlaying: boolean;
+}
+
 export function usePartySocket(
   partyCode: string,
   userId: string,
@@ -7,7 +32,9 @@ export function usePartySocket(
   isHost: boolean
 ) {
   const [connected, setConnected] = useState(false);
-  const [partyState, setPartyState] = useState({
+  
+  // Типизируем useState
+  const [partyState, setPartyState] = useState<PartyState>({
     participants: [],
     queue: [],
     currentTrack: null,
@@ -31,7 +58,12 @@ export function usePartySocket(
   const addTrack = useCallback((track: any) => {
     setPartyState(prev => ({
       ...prev,
-      queue: [...prev.queue, { ...track, votes: 1, votedBy: [userId], addedBy: userName }]
+      queue: [...prev.queue, { 
+        ...track, 
+        votes: 1, 
+        votedBy: [userId], 
+        addedBy: userName 
+      }]
     }));
   }, [userId, userName]);
 
