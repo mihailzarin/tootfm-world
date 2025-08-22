@@ -6,10 +6,10 @@ import { prisma } from '@/lib/prisma';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { code } = params;
+    const { code } = await params;
     const body = await request.json();
     
     console.log('🎵 Adding track to party:', code);
@@ -149,10 +149,10 @@ export async function POST(
 // GET endpoint для получения треков party
 export async function GET(
   request: NextRequest,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { code } = params;
+    const { code } = await params;
     
     const party = await prisma.party.findUnique({
       where: { code: code.toUpperCase() },

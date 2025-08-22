@@ -5,10 +5,10 @@ import { prisma } from '@/lib/prisma';
 // GET - получить информацию о party
 export async function GET(
   request: NextRequest,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { code } = params;
+    const { code } = await params;
     console.log('📍 Getting party:', code);
 
     const party = await prisma.party.findUnique({
@@ -178,10 +178,10 @@ export async function POST(request: NextRequest) {
 // PUT - обновить party (присоединиться к party)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { code } = params;
+    const { code } = await params;
     const userCookieId = request.cookies.get('tootfm_user_id')?.value;
     
     if (!userCookieId) {
@@ -290,10 +290,10 @@ export async function PUT(
 // DELETE - удалить party
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { code } = params;
+    const { code } = await params;
     const userCookieId = request.cookies.get('tootfm_user_id')?.value;
     
     if (!userCookieId) {

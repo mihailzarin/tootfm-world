@@ -1,36 +1,37 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
-    // Деактивируем Spotify service
-    await prisma.musicService.updateMany({
+
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    await prisma.musicService.deleteMany({
       where: {
-        userId: session.user.id,
+        userId: user.id,
         service: 'SPOTIFY'
-      },
-      data: {
-        isActive: false,
-        accessToken: null,
-        refreshToken: null,
-        tokenExpiry: null
       }
     });
+
+    const response = NextResponse.json({ success: true });
+    response.cookies.delete('spotify_token');
     
-    return NextResponse.json({ success: true });
+    return response;
   } catch (error) {
-    console.error('Error disconnecting Spotify:', error);
-    return NextResponse.json(
-      { error: 'Failed to disconnect Spotify' },
-      { status: 500 }
-    );
+    console.error('Disconnect error:', error);
+    return NextResponse.json({ error: 'Failed to disconnect' }, { status: 500 });
   }
 }
