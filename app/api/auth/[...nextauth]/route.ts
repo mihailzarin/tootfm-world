@@ -5,6 +5,19 @@ import SpotifyProvider from "next-auth/providers/spotify";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 
+
+// ВРЕМЕННЫЙ DEBUG - удалить после решения проблемы
+if (typeof window === 'undefined') { // только на сервере
+  const originalConsoleError = console.error;
+  console.error = function(...args) {
+    if (args[0]?.includes?.('Callback') || args[0]?.includes?.('spotify')) {
+      console.log('🔴 SPOTIFY ERROR CAUGHT:', ...args);
+    }
+    originalConsoleError.apply(console, args);
+  };
+}
+
+
 // ВАЖНО: Экспортируем authOptions для использования в других местах
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
