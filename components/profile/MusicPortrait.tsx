@@ -422,7 +422,7 @@ export default function MusicPortrait() {
                   </div>
                   
                   {track.album?.images?.[0] && (
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    /* eslint-disable-next-line @next/next/no-img-element */
                     <img 
                       src={track.album.images[0].url}
                       alt={track.album.name}
@@ -454,7 +454,7 @@ export default function MusicPortrait() {
                 >
                   <div className="aspect-square mb-1.5 sm:mb-2 md:mb-3 relative overflow-hidden rounded-md sm:rounded-lg bg-gradient-to-br from-purple-500 to-pink-500">
                     {artist.images?.[0] ? (
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img 
                         src={artist.images[0].url}
                         alt={artist.name}
