@@ -3,8 +3,6 @@
 import { useState, useEffect } from 'react';
 import { 
   Music, 
-  TrendingUp, 
-  Users, 
   Sparkles, 
   RefreshCw, 
   Loader2,
@@ -13,9 +11,7 @@ import {
   Radio,
   Heart,
   Zap,
-  Palette,
-  Play,
-  ExternalLink
+  Palette
 } from 'lucide-react';
 
 interface Track {
@@ -52,6 +48,13 @@ interface MusicProfile {
   sources: string[];
 }
 
+interface ServiceData {
+  tracks?: { items?: Track[] };
+  artists?: { items?: Artist[] };
+  recentTracks?: Track[];
+  topArtists?: Artist[];
+}
+
 export default function MusicPortrait() {
   const [profile, setProfile] = useState<MusicProfile | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,7 +76,7 @@ export default function MusicPortrait() {
         if (cachedTime) {
           setLastUpdated(new Date(cachedTime));
         }
-      } catch (e) {
+      } catch {
         console.error('Failed to load cached profile');
       }
     }
@@ -122,7 +125,7 @@ export default function MusicPortrait() {
     }
   };
 
-  const fetchSpotifyData = async () => {
+  const fetchSpotifyData = async (): Promise<ServiceData | null> => {
     try {
       const response = await fetch('/api/spotify/top-items');
       if (!response.ok) return null;
@@ -133,7 +136,7 @@ export default function MusicPortrait() {
     }
   };
 
-  const fetchLastFmData = async () => {
+  const fetchLastFmData = async (): Promise<ServiceData | null> => {
     try {
       const response = await fetch('/api/music/lastfm/top-tracks');
       if (!response.ok) return null;
@@ -148,7 +151,7 @@ export default function MusicPortrait() {
     }
   };
 
-  const combineServiceData = (spotify: any, lastfm: any) => {
+  const combineServiceData = (spotify: ServiceData | null, lastfm: ServiceData | null) => {
     const combined = {
       topTracks: [] as Track[],
       topArtists: [] as Artist[],
@@ -158,13 +161,13 @@ export default function MusicPortrait() {
     if (spotify) {
       combined.sources.push('Spotify');
       if (spotify.tracks?.items) {
-        combined.topTracks.push(...spotify.tracks.items.map((t: any) => ({
+        combined.topTracks.push(...spotify.tracks.items.map((t: Track) => ({
           ...t,
           source: 'Spotify'
         })));
       }
       if (spotify.artists?.items) {
-        combined.topArtists.push(...spotify.artists.items.map((a: any) => ({
+        combined.topArtists.push(...spotify.artists.items.map((a: Artist) => ({
           ...a,
           source: 'Spotify'
         })));
@@ -174,10 +177,10 @@ export default function MusicPortrait() {
     if (lastfm) {
       combined.sources.push('Last.fm');
       if (lastfm.recentTracks) {
-        combined.topTracks.push(...lastfm.recentTracks.map((t: any) => ({
-          name: t.title || t.name,
-          artists: [{ name: t.artist }],
-          album: { name: t.album },
+        combined.topTracks.push(...lastfm.recentTracks.map((t: Track) => ({
+          name: t.name,
+          artists: t.artists || [],
+          album: t.album,
           source: 'Last.fm'
         })));
       }
@@ -186,9 +189,9 @@ export default function MusicPortrait() {
     return combined;
   };
 
-  const analyzeData = (data: any): MusicProfile => {
+  const analyzeData = (data: { topTracks: Track[], topArtists: Artist[], sources: string[] }): MusicProfile => {
     const genres = new Set<string>();
-    data.topArtists.forEach((artist: any) => {
+    data.topArtists.forEach((artist: Artist) => {
       if (artist.genres) {
         artist.genres.forEach((g: string) => genres.add(g));
       }
@@ -199,7 +202,7 @@ export default function MusicPortrait() {
       topGenres.push('Pop', 'Rock', 'Electronic');
     }
 
-    const personality = generatePersonality(topGenres, data.topTracks);
+    const personality = generatePersonality(topGenres);
     const energyLevel = Math.random() * 0.3 + 0.6;
     const diversityScore = Math.min(1, topGenres.length / 10);
 
@@ -214,7 +217,7 @@ export default function MusicPortrait() {
     };
   };
 
-  const generatePersonality = (genres: string[], tracks: any[]): string => {
+  const generatePersonality = (genres: string[]): string => {
     if (genres.length === 0) return 'Music Explorer 🎵';
     
     const hasElectronic = genres.some(g => 
@@ -419,6 +422,7 @@ export default function MusicPortrait() {
                   </div>
                   
                   {track.album?.images?.[0] && (
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img 
                       src={track.album.images[0].url}
                       alt={track.album.name}
@@ -450,6 +454,7 @@ export default function MusicPortrait() {
                 >
                   <div className="aspect-square mb-1.5 sm:mb-2 md:mb-3 relative overflow-hidden rounded-md sm:rounded-lg bg-gradient-to-br from-purple-500 to-pink-500">
                     {artist.images?.[0] ? (
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img 
                         src={artist.images[0].url}
                         alt={artist.name}
