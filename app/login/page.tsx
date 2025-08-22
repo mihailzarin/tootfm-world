@@ -5,10 +5,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { Music, ArrowLeft, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { signIn } from "next-auth/react";
 
-// Component that uses useSearchParams
+// Component that uses URL parameters
 function LoginContent() {
-  const { login, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -47,11 +48,14 @@ function LoginContent() {
     setError(null);
     
     try {
-      await login();
+      // Use NextAuth's built-in signIn function
+      await signIn('google', { 
+        callbackUrl: '/profile',
+        redirect: true 
+      });
     } catch (error) {
       console.error('Login error:', error);
       setError('Failed to sign in. Please try again.');
-    } finally {
       setIsLoading(false);
     }
   };

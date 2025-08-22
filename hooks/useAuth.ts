@@ -1,21 +1,10 @@
-import { useSession, signIn, signOut } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 
 export function useAuth() {
   const { data: session, status } = useSession();
   const router = useRouter();
-
-  const login = useCallback(() => {
-    try {
-      signIn("google", { 
-        callbackUrl: "/profile",
-        redirect: true 
-      });
-    } catch (error) {
-      console.error("❌ Login error:", error);
-    }
-  }, []);
 
   const logout = useCallback(() => {
     try {
@@ -41,7 +30,6 @@ export function useAuth() {
     user: session?.user,
     isAuthenticated: !!session,
     isLoading: status === "loading",
-    login,
     logout,
     requireAuth
   };

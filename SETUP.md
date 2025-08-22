@@ -1,22 +1,18 @@
 # tootFM v2.0 Setup Guide
 
-## 🚨 Current Issues Fixed
+## 🚨 CRITICAL FIXES APPLIED
 
-### 1. Google OAuth Authentication Issues
-- ✅ Added proper error handling and logging to NextAuth
-- ✅ Fixed environment variable validation
-- ✅ Added detailed debugging information
-- ✅ Improved session and JWT callbacks
+### ✅ OAuth Callback Routes Fixed
+- **REMOVED** conflicting custom OAuth routes (`/api/auth/google/`, `/api/auth/spotify/`)
+- **FIXED** NextAuth configuration to use proper callback URLs
+- **UPDATED** environment variables to use port 3001
+- **CLEANED** API structure to only use NextAuth's built-in routes
 
-### 2. Database Connection Issues
-- ✅ Enhanced Prisma client with better error handling
-- ✅ Added connection testing scripts
-- ✅ Improved error messages for common database issues
-
-### 3. Missing Error Handling
-- ✅ Added try-catch blocks throughout the codebase
-- ✅ Improved API route error responses
-- ✅ Added proper TypeScript types
+### ✅ NextAuth Configuration Fixed
+- **PROPER** OAuth authorization parameters
+- **COMPREHENSIVE** logging and error handling
+- **CORRECT** session and JWT callbacks
+- **DEBUG** mode enabled for troubleshooting
 
 ## 🔧 Setup Instructions
 
@@ -36,8 +32,8 @@
    # Option B: Supabase (Recommended for development)
    DATABASE_URL="postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres"
    
-   # NextAuth.js
-   NEXTAUTH_URL="http://localhost:3000"
+   # NextAuth.js (IMPORTANT: Using port 3001)
+   NEXTAUTH_URL="http://localhost:3001"
    NEXTAUTH_SECRET="your-generated-secret-here"
    
    # Google OAuth (Required)
@@ -45,7 +41,7 @@
    GOOGLE_CLIENT_SECRET="your-google-client-secret"
    ```
 
-### Step 2: Google OAuth Setup
+### Step 2: Google OAuth Setup (CRITICAL)
 
 1. **Go to Google Cloud Console:**
    - Visit: https://console.cloud.google.com/
@@ -59,7 +55,18 @@
    - Go to "APIs & Services" > "Credentials"
    - Click "Create Credentials" > "OAuth 2.0 Client IDs"
    - Application type: "Web application"
-   - Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google`
+   
+   **🚨 CRITICAL: Use these EXACT redirect URIs:**
+   ```
+   http://localhost:3001/api/auth/callback/google
+   https://tootfm-world.vercel.app/api/auth/callback/google
+   ```
+   
+   **❌ DO NOT USE:**
+   ```
+   http://localhost:3001/api/auth/google/callback  (WRONG!)
+   http://localhost:3000/api/auth/callback/google  (WRONG PORT!)
+   ```
 
 4. **Copy the credentials to your `.env` file**
 
@@ -112,11 +119,27 @@ npm run env:check
 ### Step 6: Start the Application
 
 ```bash
-# Development mode
+# Development mode (will run on port 3001)
 npm run dev
 ```
 
 ## 🐛 Troubleshooting
+
+### OAuth Callback Issues
+
+**Error: "Invalid redirect_uri"**
+- ✅ **CORRECT**: `http://localhost:3001/api/auth/callback/google`
+- ❌ **WRONG**: `http://localhost:3001/api/auth/google/callback`
+- ❌ **WRONG**: `http://localhost:3000/api/auth/callback/google`
+
+**Error: "Failed to sign in"**
+```bash
+# Check environment variables
+npm run env:check
+
+# Check browser console for detailed errors
+# Look for NextAuth debug logs in terminal
+```
 
 ### Database Connection Issues
 
@@ -129,21 +152,6 @@ npm run db:test
 sudo systemctl status postgresql
 
 # For Supabase, check your connection string
-```
-
-### Google OAuth Issues
-
-**Error: "Google hasn't verified this app"**
-- This is normal for development
-- Click "Advanced" > "Go to [Your App] (unsafe)"
-
-**Error: "Failed to sign in"**
-```bash
-# Check environment variables
-npm run env:check
-
-# Check browser console for detailed errors
-# Look for NextAuth debug logs in terminal
 ```
 
 ### Common Issues
@@ -162,7 +170,7 @@ npm run env:check
    ```
 
 3. **Port Conflicts:**
-   - Make sure port 3000 is available
+   - Make sure port 3001 is available
    - Check if another Next.js app is running
 
 ## 🔍 Debugging
@@ -170,10 +178,20 @@ npm run env:check
 ### Enable Debug Logging
 
 The app now includes comprehensive logging. Check your terminal for:
-- 🔐 SignIn callback logs
-- 🔄 Session callback logs
-- 🎫 JWT callback logs
-- ❌ Error messages with details
+- `[NextAuth] SignIn callback:` - OAuth flow logs
+- `[NextAuth] Session callback:` - Session management logs
+- `[NextAuth] JWT callback:` - Token handling logs
+- `❌ Error messages` - Detailed error information
+
+### Test Authentication
+
+```bash
+# Test authentication endpoint
+curl http://localhost:3001/api/test-auth
+
+# Check NextAuth routes
+curl http://localhost:3001/api/auth/session
+```
 
 ### Database Debugging
 
@@ -230,5 +248,15 @@ If you encounter issues:
 2. **Verify environment variables:** Run `npm run env:check`
 3. **Test database connection:** Run `npm run db:test`
 4. **Check browser console:** Look for client-side errors
+5. **Verify OAuth redirect URIs:** Make sure they match exactly
+
+## ✅ Expected OAuth Flow
+
+1. User clicks "Continue with Google"
+2. Redirects to: `https://accounts.google.com/oauth/authorize?...`
+3. User grants permissions
+4. Google redirects to: `http://localhost:3001/api/auth/callback/google`
+5. NextAuth processes the callback
+6. User is redirected to: `/profile`
 
 The app now includes comprehensive error handling and logging to help identify and fix issues quickly.

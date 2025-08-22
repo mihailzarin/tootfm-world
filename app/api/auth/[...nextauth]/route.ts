@@ -7,109 +7,87 @@ const handler = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID || "missing-google-client-id",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "missing-google-client-secret",
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          scope: "openid email profile"
+          prompt: "consent",
+          access_type: "offline",
+          response_type: "code"
         }
       }
     }),
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
-      console.log("🔐 SignIn callback triggered:", { 
-        provider: account?.provider, 
-        email: user.email,
-        hasGoogleId: !!account?.providerAccountId 
+      console.log('[NextAuth] SignIn callback:', { 
+        user: user?.email,
+        provider: account?.provider,
+        profile: profile?.email 
       });
-
+      
+      if (!user?.email) {
+        console.error('[NextAuth] No email found');
+        return false;
+      }
+      
       try {
-        if (account?.provider === "google") {
-          console.log("📝 Creating/updating user in database...");
-          
-          // Create or update user in database
-          const dbUser = await prisma.user.upsert({
-            where: { email: user.email! },
-            update: { 
-              name: user.name, 
-              image: user.image,
-              updatedAt: new Date()
-            },
-            create: {
-              email: user.email!,
-              name: user.name,
-              image: user.image,
-              googleId: account.providerAccountId
-            }
-          });
-
-          console.log("✅ User successfully created/updated:", { 
-            id: dbUser.id, 
-            email: dbUser.email,
-            googleId: dbUser.googleId 
-          });
-        }
+        // Ensure user exists in database
+        const dbUser = await prisma.user.upsert({
+          where: { email: user.email },
+          update: {
+            name: user.name,
+            image: user.image,
+          },
+          create: {
+            email: user.email,
+            name: user.name,
+            image: user.image,
+            googleId: account?.providerAccountId,
+          },
+        });
+        
+        console.log('[NextAuth] User upserted:', dbUser.id);
         return true;
       } catch (error) {
-        console.error("❌ Error in signIn callback:", error);
+        console.error('[NextAuth] Database error:', error);
         return false;
       }
     },
-    async session({ session, user, token }) {
-      console.log("🔄 Session callback triggered:", { 
-        hasUser: !!user, 
+    
+    async session({ session, token }) {
+      console.log('[NextAuth] Session callback:', { 
+        hasSession: !!session,
         hasToken: !!token,
-        sessionUserId: session.user?.id 
+        userId: token?.sub 
       });
-
-      try {
-        if (session.user) {
-          // Use token.userId if available (JWT strategy), otherwise user.id
-          session.user.id = token.userId || user?.id;
-        }
-        return session;
-      } catch (error) {
-        console.error("❌ Error in session callback:", error);
-        return session;
+      
+      if (token && session.user) {
+        session.user.id = token.sub!;
       }
+      return session;
     },
-    async jwt({ token, user, account }) {
-      console.log("🎫 JWT callback triggered:", { 
-        hasUser: !!user, 
-        hasAccount: !!account,
-        tokenUserId: token.userId 
+    
+    async jwt({ token, user }) {
+      console.log('[NextAuth] JWT callback:', { 
+        hasToken: !!token,
+        hasUser: !!user,
+        tokenId: token?.id 
       });
-
-      try {
-        if (account && user) {
-          token.userId = user.id;
-        }
-        return token;
-      } catch (error) {
-        console.error("❌ Error in JWT callback:", error);
-        return token;
+      
+      if (user) {
+        token.id = user.id;
       }
+      return token;
     }
   },
+  debug: true, // Enable debug mode to see what's happening
   pages: {
     signIn: '/login',
-    error: '/login'
+    error: '/login',
   },
   session: {
     strategy: "jwt"
-  },
-  debug: process.env.NODE_ENV === 'development',
-  logger: {
-    error(code, ...message) {
-      console.error("❌ NextAuth Error:", code, ...message);
-    },
-    warn(code, ...message) {
-      console.warn("⚠️ NextAuth Warning:", code, ...message);
-    },
-    debug(code, ...message) {
-      console.log("🐛 NextAuth Debug:", code, ...message);
-    }
   }
 });
 
