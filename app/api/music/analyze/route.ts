@@ -1,12 +1,10 @@
-// app/api/music/analyze/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
-    // Получаем сессию NextAuth
     const session = await getServerSession(authOptions);
     
     if (!session?.user?.email) {
@@ -16,7 +14,6 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
 
-    // Получаем пользователя из БД
     const user = await prisma.user.findUnique({
       where: { email: session.user.email }
     });
@@ -27,12 +24,10 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // Получаем данные анализа из тела запроса
     const analysisData = await request.json();
     
     console.log('💾 Saving music profile for user:', user.id);
 
-    // Сохраняем или обновляем музыкальный профиль
     const musicProfile = await prisma.musicProfile.upsert({
       where: { userId: user.id },
       update: {
@@ -75,7 +70,6 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    // Получаем сессию NextAuth
     const session = await getServerSession(authOptions);
     
     if (!session?.user?.email) {
@@ -84,7 +78,6 @@ export async function GET(request: NextRequest) {
       }, { status: 401 });
     }
 
-    // Получаем профиль пользователя
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
       include: {

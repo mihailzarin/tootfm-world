@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 async function refreshSpotifyToken(refreshToken: string) {
@@ -19,6 +19,8 @@ async function refreshSpotifyToken(refreshToken: string) {
   });
 
   if (!response.ok) {
+    const error = await response.text();
+    console.error('[Spotify] Refresh token error:', error);
     throw new Error('Failed to refresh token');
   }
 
@@ -27,32 +29,33 @@ async function refreshSpotifyToken(refreshToken: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    // Получаем сессию пользователя
+    console.log('[Spotify API] Starting request...');
+    
     const session = await getServerSession(authOptions);
+    console.log('[Spotify API] Session:', session?.user?.id ? 'Found' : 'Not found');
     
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Получаем токены Spotify из БД
-    const musicService = await prisma.musicService.findUnique({
+    // Используем findFirst вместо findUnique
+    const musicService = await prisma.musicService.findFirst({
       where: {
-        userId_service: {
-          userId: session.user.id,
-          service: 'SPOTIFY'
-        }
+        userId: session.user.id,
+        service: 'SPOTIFY'
       }
     });
+
+    console.log('[Spotify API] MusicService:', musicService ? 'Found' : 'Not found');
 
     if (!musicService || !musicService.accessToken) {
       return NextResponse.json({ error: 'Spotify not connected' }, { status: 401 });
     }
 
-    // Проверяем не истек ли токен
     let accessToken = musicService.accessToken;
     
     if (musicService.tokenExpiry && new Date() > musicService.tokenExpiry) {
-      console.log('[Spotify] Token expired, refreshing...');
+      console.log('[Spotify API] Token expired, refreshing...');
       
       if (!musicService.refreshToken) {
         return NextResponse.json({ error: 'No refresh token available' }, { status: 401 });
@@ -61,7 +64,6 @@ export async function GET(request: NextRequest) {
       try {
         const newTokens = await refreshSpotifyToken(musicService.refreshToken);
         
-        // Обновляем токены в БД
         await prisma.musicService.update({
           where: { id: musicService.id },
           data: {
@@ -71,14 +73,16 @@ export async function GET(request: NextRequest) {
         });
         
         accessToken = newTokens.access_token;
+        console.log('[Spotify API] Token refreshed successfully');
       } catch (error) {
-        console.error('[Spotify] Token refresh failed:', error);
+        console.error('[Spotify API] Token refresh failed:', error);
         return NextResponse.json({ error: 'Token refresh failed' }, { status: 401 });
       }
     }
 
-    // Запрашиваем данные из Spotify
-    const [topTracks, topArtists] = await Promise.all([
+    console.log('[Spotify API] Fetching data from Spotify...');
+
+    const [topTracksRes, topArtistsRes] = await Promise.all([
       fetch('https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=medium_term', {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       }),
@@ -87,39 +91,58 @@ export async function GET(request: NextRequest) {
       })
     ]);
 
-    if (!topTracks.ok || !topArtists.ok) {
-      console.error('[Spotify] API request failed');
-      return NextResponse.json({ error: 'Failed to fetch Spotify data' }, { status: 500 });
+    console.log('[Spotify API] Response status:', {
+      tracks: topTracksRes.status,
+      artists: topArtistsRes.status
+    });
+
+    if (!topTracksRes.ok || !topArtistsRes.ok) {
+      const tracksError = !topTracksRes.ok ? await topTracksRes.text() : null;
+      const artistsError = !topArtistsRes.ok ? await topArtistsRes.text() : null;
+      console.error('[Spotify API] Request failed:', { tracksError, artistsError });
+      return NextResponse.json({ 
+        error: 'Failed to fetch Spotify data',
+        details: { tracksError, artistsError }
+      }, { status: 500 });
     }
 
-    const tracksData = await topTracks.json();
-    const artistsData = await topArtists.json();
+    const tracksData = await topTracksRes.json();
+    const artistsData = await topArtistsRes.json();
 
-    // Извлекаем жанры из артистов
-    const genres = artistsData.items.reduce((acc: Record<string, number>, artist: any) => {
+    console.log('[Spotify API] Data received:', {
+      tracks: tracksData.items?.length || 0,
+      artists: artistsData.items?.length || 0
+    });
+
+    const genres: Record<string, number> = {};
+    artistsData.items?.forEach((artist: any) => {
       artist.genres?.forEach((genre: string) => {
-        acc[genre] = (acc[genre] || 0) + 1;
+        genres[genre] = (genres[genre] || 0) + 1;
       });
-      return acc;
-    }, {});
+    });
 
-    // Сортируем жанры по популярности
     const topGenres = Object.entries(genres)
-      .sort(([, a], [, b]) => (b as number) - (a as number))
+      .sort(([, a], [, b]) => b - a)
       .slice(0, 10)
       .map(([genre]) => genre);
 
-    return NextResponse.json({
+    const response = {
       tracks: tracksData.items || [],
       artists: artistsData.items || [],
       genres: topGenres,
       connected: true
-    });
+    };
+
+    console.log('[Spotify API] Returning success');
+    return NextResponse.json(response);
 
   } catch (error) {
-    console.error('[Spotify] Error:', error);
+    console.error('[Spotify API] Unexpected error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }

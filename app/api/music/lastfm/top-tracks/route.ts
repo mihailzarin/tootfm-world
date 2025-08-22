@@ -1,14 +1,12 @@
-// app/api/music/lastfm/top-tracks/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 const LASTFM_API_KEY = process.env.LASTFM_API_KEY!;
 
 export async function GET(request: NextRequest) {
   try {
-    // Получаем сессию NextAuth
     const session = await getServerSession(authOptions);
     
     if (!session?.user?.email) {
@@ -18,7 +16,6 @@ export async function GET(request: NextRequest) {
       }, { status: 401 });
     }
 
-    // Получаем пользователя из БД
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
       include: {
@@ -34,11 +31,9 @@ export async function GET(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // Проверяем Last.fm сервис
     const lastfmService = user.musicServices[0];
     
     if (!lastfmService?.lastfmUsername) {
-      // Проверяем cookies для обратной совместимости
       const lastfmUsername = request.cookies.get('lastfm_username')?.value;
       
       if (!lastfmUsername) {
@@ -49,7 +44,6 @@ export async function GET(request: NextRequest) {
         }, { status: 401 });
       }
       
-      // Сохраняем в БД для будущего использования
       await prisma.musicService.upsert({
         where: {
           userId_service: {
@@ -74,7 +68,6 @@ export async function GET(request: NextRequest) {
       return fetchLastfmData(lastfmUsername);
     }
 
-    // Используем username из БД
     return fetchLastfmData(lastfmService.lastfmUsername);
 
   } catch (error) {
@@ -88,6 +81,14 @@ export async function GET(request: NextRequest) {
 
 async function fetchLastfmData(username: string) {
   console.log('🎵 Fetching Last.fm data for:', username);
+  
+  if (!LASTFM_API_KEY) {
+    console.error('❌ LASTFM_API_KEY not found');
+    return NextResponse.json({ 
+      error: 'Last.fm API key not configured',
+      tracks: []
+    }, { status: 500 });
+  }
   
   const response = await fetch(
     `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${username}&api_key=${LASTFM_API_KEY}&format=json&limit=20&period=3month`
