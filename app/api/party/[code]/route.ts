@@ -23,7 +23,14 @@ export async function GET(
             voteCount: 'desc'
           }
         },
-        creator: true
+        creator: true,
+        // Добавляем подсчет для правильного отображения количества участников
+        _count: {
+          select: {
+            members: true,
+            tracks: true
+          }
+        }
       }
     });
 
@@ -31,7 +38,8 @@ export async function GET(
       return NextResponse.json({ error: 'Party not found' }, { status: 404 });
     }
 
-    return NextResponse.json(party);
+    // ИСПРАВЛЕНО: Возвращаем party в обертке, как ожидает клиент
+    return NextResponse.json({ party });
   } catch (error) {
     console.error('Error fetching party:', error);
     return NextResponse.json(
@@ -68,7 +76,13 @@ export async function POST(request: NextRequest) {
     const party = await prisma.party.findUnique({
       where: { code: code.toUpperCase() },
       include: {
-        members: true
+        members: true,
+        _count: {
+          select: {
+            members: true,
+            tracks: true
+          }
+        }
       }
     });
     
@@ -109,10 +123,34 @@ export async function POST(request: NextRequest) {
       data: { totalMembers: { increment: 1 } }
     });
     
+    // Получаем обновленные данные party с новым участником
+    const updatedParty = await prisma.party.findUnique({
+      where: { id: party.id },
+      include: {
+        members: {
+          include: {
+            user: true
+          }
+        },
+        tracks: {
+          orderBy: {
+            voteCount: 'desc'
+          }
+        },
+        creator: true,
+        _count: {
+          select: {
+            members: true,
+            tracks: true
+          }
+        }
+      }
+    });
+    
     return NextResponse.json({ 
       success: true,
       message: 'Successfully joined party',
-      party
+      party: updatedParty
     });
     
   } catch (error) {
@@ -211,10 +249,30 @@ export async function PUT(
         votingEnabled: body.votingEnabled !== undefined ? body.votingEnabled : party.votingEnabled,
         partyRadio: body.partyRadio !== undefined ? body.partyRadio : party.partyRadio,
         maxMembers: body.maxMembers || party.maxMembers
+      },
+      include: {
+        members: {
+          include: {
+            user: true
+          }
+        },
+        tracks: {
+          orderBy: {
+            voteCount: 'desc'
+          }
+        },
+        creator: true,
+        _count: {
+          select: {
+            members: true,
+            tracks: true
+          }
+        }
       }
     });
     
-    return NextResponse.json(updated);
+    // ИСПРАВЛЕНО: Возвращаем в правильном формате
+    return NextResponse.json({ party: updated });
   } catch (error) {
     console.error('Error updating party:', error);
     return NextResponse.json(

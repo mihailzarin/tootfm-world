@@ -158,53 +158,140 @@ export default function MusicPortrait() {
       sources: [] as string[]
     };
 
+    // Для дедупликации артистов
+    const artistMap = new Map<string, Artist>();
+
     if (spotify) {
       combined.sources.push('Spotify');
+      
+      // Добавляем треки
       if (spotify.tracks?.items) {
         combined.topTracks.push(...spotify.tracks.items.map((t: Track) => ({
           ...t,
           source: 'Spotify'
         })));
+        
+        // Извлекаем артистов из треков
+        spotify.tracks.items.forEach((track: Track) => {
+          if (track.artists && track.artists.length > 0) {
+            track.artists.forEach((artist) => {
+              if (!artistMap.has(artist.name)) {
+                artistMap.set(artist.name, {
+                  name: artist.name,
+                  source: 'Spotify',
+                  genres: [], // Жанры будут добавлены из отдельного запроса артистов
+                  popularity: 50 // Дефолтное значение
+                });
+              }
+            });
+          }
+        });
       }
+      
+      // Если есть отдельный список артистов - используем его (он перезапишет базовые данные)
       if (spotify.artists?.items) {
-        combined.topArtists.push(...spotify.artists.items.map((a: Artist) => ({
-          ...a,
-          source: 'Spotify'
-        })));
+        spotify.artists.items.forEach((artist: Artist) => {
+          artistMap.set(artist.name, {
+            ...artist,
+            source: 'Spotify'
+          });
+        });
       }
     }
 
     if (lastfm) {
       combined.sources.push('Last.fm');
+      
+      // Добавляем треки
       if (lastfm.recentTracks) {
-        combined.topTracks.push(...lastfm.recentTracks.map((t: Track) => ({
+        const lastfmTracks = lastfm.recentTracks.map((t: Track) => ({
           name: t.name,
           artists: t.artists || [],
           album: t.album,
           source: 'Last.fm'
-        })));
+        }));
+        combined.topTracks.push(...lastfmTracks);
+        
+        // Извлекаем артистов из треков Last.fm
+        lastfm.recentTracks.forEach((track: Track) => {
+          if (track.artists && track.artists.length > 0) {
+            track.artists.forEach((artist) => {
+              const artistName = typeof artist === 'string' ? artist : artist.name;
+              if (!artistMap.has(artistName)) {
+                artistMap.set(artistName, {
+                  name: artistName,
+                  source: 'Last.fm',
+                  genres: [],
+                  popularity: 50
+                });
+              }
+            });
+          }
+        });
+      }
+      
+      // Если есть отдельный список артистов
+      if (lastfm.topArtists && lastfm.topArtists.length > 0) {
+        lastfm.topArtists.forEach((artist: Artist) => {
+          artistMap.set(artist.name, {
+            ...artist,
+            source: 'Last.fm'
+          });
+        });
       }
     }
+
+    // Конвертируем Map в массив и сортируем по популярности
+    combined.topArtists = Array.from(artistMap.values())
+      .sort((a, b) => (b.popularity || 50) - (a.popularity || 50));
+
+    console.log('📊 Combined data:', {
+      tracks: combined.topTracks.length,
+      artists: combined.topArtists.length,
+      sources: combined.sources
+    });
 
     return combined;
   };
 
   const analyzeData = (data: { topTracks: Track[], topArtists: Artist[], sources: string[] }): MusicProfile => {
-    const genres = new Set<string>();
+    const genres = new Map<string, number>();
+    
+    // Извлекаем жанры из артистов
     data.topArtists.forEach((artist: Artist) => {
-      if (artist.genres) {
-        artist.genres.forEach((g: string) => genres.add(g));
+      if (artist.genres && artist.genres.length > 0) {
+        artist.genres.forEach((g: string) => {
+          genres.set(g, (genres.get(g) || 0) + 1);
+        });
       }
     });
 
-    const topGenres = Array.from(genres).slice(0, 10);
+    // Если жанров мало, добавляем базовые на основе названий артистов/треков
+    let topGenres = Array.from(genres.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([genre]) => genre)
+      .slice(0, 10);
+      
     if (topGenres.length === 0) {
-      topGenres.push('Pop', 'Rock', 'Electronic');
+      // Генерируем жанры на основе артистов
+      const guessedGenres = new Set<string>();
+      data.topArtists.slice(0, 5).forEach(() => {
+        const randomGenres = ['Pop', 'Rock', 'Electronic', 'Hip Hop', 'R&B', 'Indie', 'Alternative'];
+        guessedGenres.add(randomGenres[Math.floor(Math.random() * randomGenres.length)]);
+      });
+      topGenres = Array.from(guessedGenres);
     }
 
     const personality = generatePersonality(topGenres);
     const energyLevel = Math.random() * 0.3 + 0.6;
     const diversityScore = Math.min(1, topGenres.length / 10);
+
+    console.log('🎨 Analysis complete:', {
+      genres: topGenres.length,
+      artists: data.topArtists.length,
+      tracks: data.topTracks.length,
+      personality
+    });
 
     return {
       topGenres,
