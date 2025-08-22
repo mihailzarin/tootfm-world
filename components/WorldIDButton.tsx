@@ -1,70 +1,79 @@
 "use client";
 
-import { IDKitWidget, ISuccessResult } from "@worldcoin/idkit";
-import { useRouter } from "next/navigation";
+import { IDKitWidget, VerificationLevel } from "@worldcoin/idkit";
 import { useState } from "react";
 
-export default function WorldIDButton() {
-  const router = useRouter();
-  const [isLoading, setIsLoading] = useState(false);
+interface WorldIDButtonProps {
+  onVerified?: (proof: any) => void;
+}
 
-  const handleVerify = async (result: ISuccessResult) => {
-    console.log("Verification successful:", result);
-    setIsLoading(true);
+export default function WorldIDButton({ onVerified }: WorldIDButtonProps) {
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  const handleVerify = async (proof: any) => {
+    console.log("World ID proof received:", proof);
+    setIsVerifying(true);
 
     try {
-      const response = await fetch("/api/auth/verify", {
+      const response = await fetch("/api/auth/world-id", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(result),
+        body: JSON.stringify(proof),
       });
 
-      const data = await response.json();
-      
-      if (data.success) {
-        // Сохраняем в localStorage
-        localStorage.setItem("world_id", result.nullifier_hash);
-        localStorage.setItem("user_data", JSON.stringify(data.user));
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Verification successful:", data);
         
-        // Сохраняем user ID для новой системы
-        localStorage.setItem("tootfm_user_id", data.user.id || result.nullifier_hash);
+        if (data.worldId) {
+          localStorage.setItem("world_id", data.worldId);
+          document.cookie = `world_id=${data.worldId}; path=/`;
+        }
         
-        // Переходим на страницу профиля
-        router.push("/profile");
+        if (onVerified) {
+          onVerified(data);
+        }
       } else {
-        alert("Verification failed. Please try again.");
+        console.error("Verification failed");
       }
     } catch (error) {
-      console.error("Error:", error);
-      alert("Connection error. Please try again.");
+      console.error("Error verifying World ID:", error);
     } finally {
-      setIsLoading(false);
+      setIsVerifying(false);
     }
   };
 
+  // Type assertion для app_id
+  const appId = process.env.NEXT_PUBLIC_WORLD_APP_ID || "app_staging_placeholder";
+  const actionId = process.env.NEXT_PUBLIC_WORLD_ACTION_ID || "verify";
+
   return (
     <IDKitWidget
-      app_id={process.env.NEXT_PUBLIC_WORLD_APP_ID || ""}
-      action={process.env.NEXT_PUBLIC_WORLD_ACTION_ID || "verify"}
+      app_id={appId as `app_${string}`}
+      action={actionId}
       onSuccess={handleVerify}
       onError={(error) => console.error("World ID Error:", error)}
-      signal="login_to_tootfm"
-      credential_types={["orb", "phone"]}
-      enableTelemetry
-      // Добавляем title для accessibility
-      verification_level="orb"
+      verification_level={VerificationLevel.Device}
     >
       {({ open }) => (
         <button
           onClick={open}
-          disabled={isLoading}
-          className="bg-white/20 backdrop-blur-lg hover:bg-white/30 text-white font-bold py-4 px-8 rounded-full transition-all duration-300 flex items-center gap-3 shadow-xl hover:shadow-2xl hover:scale-105"
-          aria-label="Sign in with World ID"
+          disabled={isVerifying}
+          className="w-full bg-black text-white px-6 py-3 rounded-lg font-medium hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
-          <span className="text-2xl">🌐</span>
-          {isLoading ? "Verifying..." : "Sign in with World ID"}
+          {isVerifying ? (
+            <>
+              <span className="animate-spin">⚪</span>
+              Verifying...
+            </>
+          ) : (
+            <>
+              <span>🌐</span>
+              Verify with World ID
+            </>
+          )}
         </button>
       )}
     </IDKitWidget>
