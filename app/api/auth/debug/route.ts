@@ -1,30 +1,45 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { cookies } from 'next/headers';
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
+    const cookieStore = cookies();
+    
+    // Проверяем все cookies связанные с авторизацией
+    const authCookies = {
+      sessionToken: cookieStore.get('next-auth.session-token')?.value || 
+                     cookieStore.get('__Secure-next-auth.session-token')?.value,
+      csrfToken: cookieStore.get('next-auth.csrf-token')?.value ||
+                 cookieStore.get('__Host-next-auth.csrf-token')?.value,
+      callbackUrl: cookieStore.get('next-auth.callback-url')?.value
+    };
     
     return NextResponse.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      session: session ? {
-        user: session.user,
-        expires: session.expires
+      success: true,
+      hasSession: !!session,
+      sessionData: session ? {
+        email: session.user?.email,
+        name: session.user?.name,
+        id: (session.user as any)?.id
       } : null,
-      env: {
-        NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-        hasGoogleCreds: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
-        hasSpotifyCreds: !!(process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET),
-        hasNextAuthSecret: !!process.env.NEXTAUTH_SECRET,
+      cookies: {
+        found: Object.values(authCookies).some(v => !!v),
+        details: authCookies
       },
-      spotifyCallback: `${process.env.NEXTAUTH_URL}/api/auth/callback/spotify`
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        nextAuthUrl: process.env.NEXTAUTH_URL,
+        hasSecret: !!process.env.NEXTAUTH_SECRET,
+        hasGoogleCreds: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
+      }
     });
   } catch (error) {
     return NextResponse.json({
-      status: 'error',
-      error: (error as Error).message
-    }, { status: 500 });
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 }
