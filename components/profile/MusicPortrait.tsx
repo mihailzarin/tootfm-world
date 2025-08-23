@@ -112,6 +112,7 @@ export default function MusicPortrait() {
         const response = await fetch('/api/music/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
             topTracks: analysis.topTracks || [],
             topArtists: analysis.topArtists || [],
@@ -146,7 +147,7 @@ export default function MusicPortrait() {
 
   const fetchSpotifyData = async (): Promise<ServiceData | null> => {
     try {
-      const response = await fetch('/api/spotify/top-items');
+      const response = await fetch('/api/spotify/top-items', { credentials: 'include' });
       if (!response.ok) return null;
       return await response.json();
     } catch (e) {
@@ -157,7 +158,7 @@ export default function MusicPortrait() {
 
   const fetchLastFmData = async (): Promise<ServiceData | null> => {
     try {
-      const response = await fetch('/api/music/lastfm/top-tracks');
+      const response = await fetch('/api/music/lastfm/top-tracks', { credentials: 'include' });
       if (!response.ok) return null;
       const data = await response.json();
       return {
