@@ -6,7 +6,7 @@ import { cookies } from 'next/headers';
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    const cookieStore = cookies();
+    const cookieStore = await cookies(); // Добавили await!
     
     // Проверяем все cookies связанные с авторизацией
     const authCookies = {
