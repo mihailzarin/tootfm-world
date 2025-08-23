@@ -1,13 +1,8 @@
+// app/api/party/create/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL
-    }
-  }
-});
+import { getServerSession } from "next-auth";
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';  // Используем singleton
 
 function generatePartyCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -20,35 +15,31 @@ function generatePartyCode(): string {
 
 export async function POST(request: NextRequest) {
   try {
-    await prisma.$connect();
-    
     const body = await request.json();
     const { name, description, isPublic = false } = body;
 
     console.log('Creating party:', { name });
 
-    // Получаем или создаём пользователя
-    let userId = request.cookies.get('tootfm_uid')?.value;
-    const worldId = body.worldId || request.headers.get('x-world-id') || `guest_${Date.now()}`;
+    // Проверяем сессию Google
+    const session = await getServerSession(authOptions);
     
-    let user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { id: userId || '' },
-          { worldId: worldId }
-        ]
-      }
+    if (!session?.user?.email) {
+      console.log('❌ No session found');
+      return NextResponse.json({ 
+        error: 'Please sign in with Google to create a party' 
+      }, { status: 401 });
+    }
+
+    // Получаем пользователя из БД по email
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
     });
 
     if (!user) {
-      user = await prisma.user.create({
-        data: {
-          worldId: worldId,
-          displayName: 'Party Host',
-          verified: true
-        }
-      });
-      console.log('Created new user:', user.id);
+      console.log('❌ User not found:', session.user.email);
+      return NextResponse.json({ 
+        error: 'User not found. Please sign in again.' 
+      }, { status: 404 });
     }
 
     // Генерируем уникальный код
@@ -66,21 +57,24 @@ export async function POST(request: NextRequest) {
       attempts++;
     }
 
-    // Создаём party БЕЗ isPublic (используем isActive для публичности)
+    // Создаём party
     const party = await prisma.party.create({
       data: {
         code,
         name: name || `Party ${code}`,
         description: description || '',
-        isActive: true, // Вместо isPublic используем isActive
-        creatorId: user.id
+        isActive: true,
+        creatorId: user.id,
+        maxMembers: 50,
+        votingEnabled: false,
+        partyRadio: false
       },
       include: {
         creator: {
           select: {
             id: true,
-            displayName: true,
-            worldId: true
+            name: true,
+            email: true
           }
         },
         _count: {
@@ -92,7 +86,16 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    console.log('Party created successfully:', party.code);
+    // Добавляем создателя как HOST
+    await prisma.partyMember.create({
+      data: {
+        partyId: party.id,
+        userId: user.id,
+        role: 'HOST'
+      }
+    });
+
+    console.log('✅ Party created successfully:', party.code, 'by', user.name);
 
     const response = NextResponse.json({
       success: true,
@@ -103,21 +106,17 @@ export async function POST(request: NextRequest) {
         description: party.description,
         isActive: party.isActive,
         createdAt: party.createdAt,
-        memberCount: party._count.members,
+        memberCount: party._count.members + 1, // +1 для HOST
         trackCount: party._count.tracks,
-        creator: party.creator
+        creator: {
+          id: party.creator.id,
+          name: party.creator.name
+        },
+        shareUrl: `/party/${party.code}`
       }
     });
 
-    if (user.id) {
-      response.cookies.set('tootfm_uid', user.id, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 30
-      });
-    }
-
+    // Сохраняем последний код party в cookies для удобства
     response.cookies.set('last_party_code', party.code, {
       httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
@@ -141,6 +140,8 @@ export async function POST(request: NextRequest) {
         errorMessage = 'Database table not found.';
       } else if (errorMessage.includes('P1001')) {
         errorMessage = 'Cannot connect to database.';
+      } else if (errorMessage.includes('prepared statement')) {
+        errorMessage = 'Database connection issue. Please refresh and try again.';
       }
     }
     
@@ -150,7 +151,5 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

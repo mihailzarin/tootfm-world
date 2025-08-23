@@ -1,4 +1,3 @@
-// components/profile/MusicPortrait.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -95,42 +94,10 @@ export default function MusicPortrait() {
       const combinedData = combineServiceData(spotifyData, lastfmData);
       const analysis = analyzeData(combinedData);
       
-      // Сохраняем в localStorage
       localStorage.setItem('music_profile_cache', JSON.stringify(analysis));
       localStorage.setItem('music_profile_updated', new Date().toISOString());
       
-      // Отправляем в БД
-      try {
-        console.log('📤 Sending analysis to API...');
-        console.log('Data to send:', {
-          topTracks: analysis.topTracks?.length || 0,
-          topArtists: analysis.topArtists?.length || 0,
-          topGenres: analysis.topGenres?.length || 0,
-          personality: analysis.musicPersonality
-        });
-        
-        const response = await fetch('/api/music/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            topTracks: analysis.topTracks || [],
-            topArtists: analysis.topArtists || [],
-            topGenres: analysis.topGenres || [],
-            musicPersonality: analysis.musicPersonality,
-            energyLevel: analysis.energyLevel,
-            diversityScore: analysis.diversityScore
-          })
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-          console.log('✅ Profile saved to DB:', result);
-        } else {
-          console.error('❌ Failed to save to DB:', result);
-        }
-      } catch (dbError) {
-        console.error('❌ Database save error:', dbError);
+        console.error('Database save error:', dbError);
       }
       
       setProfile(analysis);
