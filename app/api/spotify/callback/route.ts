@@ -43,12 +43,24 @@ export async function GET(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     console.log('Session exists:', !!session);
-    console.log('User ID:', session?.user?.id);
+    console.log('Session user:', session?.user);
     
-    if (!session?.user?.id) {
+    if (!session?.user?.email) {
       console.log('No session found');
       return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/login`);
     }
+    
+    // Находим пользователя по email, а не по session.user.id
+    const dbUser = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    });
+    
+    if (!dbUser) {
+      console.error('User not found in database for email:', session.user.email);
+      return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=user_not_found`);
+    }
+    
+    console.log('Found user in DB with ID:', dbUser.id);
     
     // Обмениваем код на токены
     console.log('Exchanging code for tokens...');
@@ -65,7 +77,7 @@ export async function GET(req: Request) {
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code: code,
-        redirect_uri: redirectUri  // Используем правильную переменную
+        redirect_uri: redirectUri
       })
     });
     
@@ -74,7 +86,6 @@ export async function GET(req: Request) {
     
     if (!tokenResponse.ok) {
       console.error('Token exchange failed:', responseText);
-      // Парсим ошибку от Spotify
       try {
         const errorData = JSON.parse(responseText);
         console.error('Spotify error:', errorData.error, errorData.error_description);
@@ -107,45 +118,53 @@ export async function GET(req: Request) {
       id: profile.id,
       display_name: profile.display_name,
       email: profile.email,
-      product: profile.product // free или premium
+      product: profile.product
     });
     
-    // Сохраняем в базу данных
-    console.log('Saving to database...');
+    // Сохраняем в базу данных с правильным userId
+    console.log('Saving to database with userId:', dbUser.id);
     
-    const existing = await prisma.musicService.findFirst({
-      where: {
-        userId: session.user.id,
-        service: 'SPOTIFY'
+    try {
+      // Сначала пробуем найти существующую запись
+      const existing = await prisma.musicService.findFirst({
+        where: {
+          userId: dbUser.id,
+          service: 'SPOTIFY'
+        }
+      });
+      
+      if (existing) {
+        console.log('Updating existing record with id:', existing.id);
+        await prisma.musicService.update({
+          where: { id: existing.id },
+          data: {
+            spotifyId: profile.id,
+            accessToken: tokens.access_token,
+            refreshToken: tokens.refresh_token || existing.refreshToken,
+            tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
+            isActive: true,
+            lastSynced: new Date()
+          }
+        });
+        console.log('Updated existing Spotify connection');
+      } else {
+        console.log('Creating new record for userId:', dbUser.id);
+        await prisma.musicService.create({
+          data: {
+            userId: dbUser.id,  // Используем ID из базы данных
+            service: 'SPOTIFY',
+            spotifyId: profile.id,
+            accessToken: tokens.access_token,
+            refreshToken: tokens.refresh_token,
+            tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
+            isActive: true
+          }
+        });
+        console.log('Created new Spotify connection');
       }
-    });
-    
-    if (existing) {
-      await prisma.musicService.update({
-        where: { id: existing.id },
-        data: {
-          spotifyId: profile.id,
-          accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token || existing.refreshToken, // Spotify не всегда возвращает refresh_token
-          tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
-          isActive: true,
-          lastSynced: new Date()
-        }
-      });
-      console.log('Updated existing Spotify connection');
-    } else {
-      await prisma.musicService.create({
-        data: {
-          userId: session.user.id,
-          service: 'SPOTIFY',
-          spotifyId: profile.id,
-          accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token,
-          tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
-          isActive: true
-        }
-      });
-      console.log('Created new Spotify connection');
+    } catch (dbError) {
+      console.error('Database operation failed:', dbError);
+      throw dbError;
     }
     
     console.log('✅ Spotify connected successfully');
