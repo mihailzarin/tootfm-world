@@ -98,7 +98,7 @@ export async function POST(
     }
 
     // Добавляем треки участников
-    party.members.forEach(member => {
+    party.members.forEach((member: any) => {
       if (member.user.musicProfile?.unifiedTopTracks) {
         addTracksToMap(member.user.musicProfile.unifiedTopTracks, member.userId);
       }
