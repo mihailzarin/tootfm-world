@@ -22,8 +22,6 @@ export default function ProfileClient() {
     appleMusic: false
   });
 
-
-  
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
@@ -59,7 +57,14 @@ export default function ProfileClient() {
         setAppleMusicConnected(true);
       }
 
-      if (searchParams?.get("spotify") === "connected") {
+      // НОВОЕ: Обработка spotify_code из URL
+      const spotifyCode = searchParams?.get("spotify_code");
+      if (spotifyCode) {
+        console.log("Found Spotify code in URL, exchanging for token...");
+        handleSpotifyCodeExchange(spotifyCode, searchParams?.get("state"));
+      }
+      // Существующая логика для spotify=connected
+      else if (searchParams?.get("spotify") === "connected") {
         handleSpotifyCallback();
       }
       
@@ -74,6 +79,56 @@ export default function ProfileClient() {
       setLoading(false);
     }
   }, [searchParams, router]);
+
+  // НОВАЯ ФУНКЦИЯ: Обмен кода на токен
+  const handleSpotifyCodeExchange = async (code: string, state: string | null) => {
+    try {
+      setConnectingServices(prev => ({ ...prev, spotify: true }));
+      
+      console.log("Exchanging Spotify code for token...");
+      
+      const response = await fetch('/api/spotify/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          code: code,
+          state: state
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log("Spotify connected successfully!", data.user);
+        
+        // Сохраняем пользователя Spotify
+        setSpotifyUser(data.user);
+        localStorage.setItem("spotify_user", JSON.stringify(data.user));
+        localStorage.setItem("spotify_connected", "true");
+        
+        // Сохраняем токены если они есть
+        if (data.tokens) {
+          localStorage.setItem("spotify_tokens", JSON.stringify(data.tokens));
+        }
+        
+        // Убираем код из URL
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('spotify_code');
+        newUrl.searchParams.delete('state');
+        window.history.replaceState({}, '', newUrl.toString());
+        
+        setConnectingServices(prev => ({ ...prev, spotify: false }));
+      } else {
+        console.error("Failed to connect Spotify:", data.error);
+        setConnectingServices(prev => ({ ...prev, spotify: false }));
+      }
+    } catch (error) {
+      console.error("Error exchanging Spotify code:", error);
+      setConnectingServices(prev => ({ ...prev, spotify: false }));
+    }
+  };
 
   const handleSpotifyCallback = () => {
     try {
@@ -141,6 +196,7 @@ export default function ProfileClient() {
     setMusicProfile(null);
     localStorage.removeItem("spotify_user");
     localStorage.removeItem("spotify_connected");
+    localStorage.removeItem("spotify_tokens");
     document.cookie = "spotify_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     document.cookie = "spotify_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   };
@@ -373,7 +429,7 @@ export default function ProfileClient() {
                       <h3 className="text-white font-bold">Spotify</h3>
                       <p className="text-gray-400 text-sm">
                         {spotifyUser ? 
-                          `Connected: ${spotifyUser.email || spotifyUser.id || 'Active'}` : 
+                          `Connected: ${spotifyUser.email || spotifyUser.display_name || spotifyUser.id || 'Active'}` : 
                           'Stream and analyze your music'
                         }
                       </p>
