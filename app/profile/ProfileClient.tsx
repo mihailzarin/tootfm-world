@@ -2,66 +2,78 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import AppleMusicConnect from "@/components/music-services/AppleMusicConnect";
 
 export default function ProfileClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session, status } = useSession();
+  
+  // States
   const [userData, setUserData] = useState<Record<string, any> | null>(null);
   const [spotifyUser, setSpotifyUser] = useState<Record<string, any> | null>(null);
   const [lastfmUser, setLastfmUser] = useState<string | null>(null);
   const [appleMusicConnected, setAppleMusicConnected] = useState(false);
   const [activeTab, setActiveTab] = useState('services');
-  const [loading, setLoading] = useState(true);
   const [musicProfile, setMusicProfile] = useState<Record<string, any> | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
-  const [lastfmData, setLastfmData] = useState<Record<string, any> | null>(null);
   const [connectingServices, setConnectingServices] = useState({
     spotify: false,
     lastfm: false,
     appleMusic: false
   });
 
+  // Основной useEffect для авторизации
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    // Ждём пока NextAuth загрузит сессию
+    if (status === "loading") return;
     
-    // ИЗМЕНЕНИЕ: Проверяем NextAuth сессию вместо localStorage
-    fetch('/api/auth/session')
-      .then(r => r.json())
-      .then(session => {
-        if (session && session.user) {
-          console.log("NextAuth session found:", session.user);
-          setUserData(session.user);
-          
-          // Сохраняем в localStorage для совместимости со старым кодом
-          localStorage.setItem("user_data", JSON.stringify(session.user));
-          
-          // Загружаем данные музыкальных сервисов
-          loadMusicServices();
-          
-          // Обрабатываем URL параметры
-          handleUrlParams();
-        } else {
-          console.log("No NextAuth session, redirecting to home");
-          router.push("/");
-        }
-      })
-      .catch(error => {
-        console.error("Error checking session:", error);
-        router.push("/");
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [searchParams, router]);
+    // Если не авторизован - на главную
+    if (status === "unauthenticated") {
+      console.log("No session, redirecting to home");
+      router.push("/");
+      return;
+    }
+    
+    // Если есть сессия - работаем
+    if (session?.user) {
+      console.log("Session loaded:", session.user);
+      setUserData(session.user);
+      
+      // Для совместимости сохраняем в localStorage
+      localStorage.setItem("user_data", JSON.stringify(session.user));
+      
+      // Загружаем музыкальные сервисы
+      loadMusicServices();
+    }
+  }, [session, status, router]);
 
-  // Загрузка данных музыкальных сервисов
+  // Обработка URL параметров (Spotify callback и т.д.)
+  useEffect(() => {
+    if (!session?.user) return;
+    
+    const spotifyCode = searchParams?.get("spotify_code");
+    if (spotifyCode) {
+      console.log("Found Spotify code in URL");
+      handleSpotifyCodeExchange(spotifyCode, searchParams?.get("state"));
+    } else if (searchParams?.get("spotify") === "connected") {
+      handleSpotifyCallback();
+    }
+    
+    if (searchParams?.get("lastfm") === "connected") {
+      handleLastfmCallback();
+    }
+  }, [searchParams, session]);
+
+  // Загрузка данных музыкальных сервисов из localStorage
   const loadMusicServices = () => {
     const spotifyStored = localStorage.getItem("spotify_user");
     if (spotifyStored) {
       try {
         const spotifyData = JSON.parse(spotifyStored);
         setSpotifyUser(spotifyData);
+        console.log("Loaded Spotify user from storage");
       } catch (e) {
         console.error("Error parsing Spotify data:", e);
       }
@@ -70,48 +82,27 @@ export default function ProfileClient() {
     const lastfmStored = localStorage.getItem("lastfm_user");
     if (lastfmStored) {
       setLastfmUser(lastfmStored);
+      console.log("Loaded Last.fm user from storage");
     }
 
     const appleToken = localStorage.getItem("apple_music_token");
     if (appleToken) {
       setAppleMusicConnected(true);
+      console.log("Loaded Apple Music from storage");
     }
   };
 
-  // Обработка URL параметров
-  const handleUrlParams = () => {
-    // Обработка spotify_code из URL
-    const spotifyCode = searchParams?.get("spotify_code");
-    if (spotifyCode) {
-      console.log("Found Spotify code in URL, exchanging for token...");
-      handleSpotifyCodeExchange(spotifyCode, searchParams?.get("state"));
-    }
-    // Существующая логика для spotify=connected
-    else if (searchParams?.get("spotify") === "connected") {
-      handleSpotifyCallback();
-    }
-    
-    if (searchParams?.get("lastfm") === "connected") {
-      handleLastfmCallback();
-    }
-  };
-
-  // Обмен кода на токен
+  // Обмен Spotify кода на токен
   const handleSpotifyCodeExchange = async (code: string, state: string | null) => {
     try {
       setConnectingServices(prev => ({ ...prev, spotify: true }));
-      
       console.log("Exchanging Spotify code for token...");
       
       const response = await fetch('/api/spotify/token', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          code: code,
-          state: state
-        })
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // ВАЖНО для cookies
+        body: JSON.stringify({ code, state })
       });
 
       const data = await response.json();
@@ -119,12 +110,10 @@ export default function ProfileClient() {
       if (data.success) {
         console.log("Spotify connected successfully!", data.user);
         
-        // Сохраняем пользователя Spotify
         setSpotifyUser(data.user);
         localStorage.setItem("spotify_user", JSON.stringify(data.user));
         localStorage.setItem("spotify_connected", "true");
         
-        // Сохраняем токены если они есть
         if (data.tokens) {
           localStorage.setItem("spotify_tokens", JSON.stringify(data.tokens));
         }
@@ -134,18 +123,19 @@ export default function ProfileClient() {
         newUrl.searchParams.delete('spotify_code');
         newUrl.searchParams.delete('state');
         window.history.replaceState({}, '', newUrl.toString());
-        
-        setConnectingServices(prev => ({ ...prev, spotify: false }));
       } else {
         console.error("Failed to connect Spotify:", data.error);
-        setConnectingServices(prev => ({ ...prev, spotify: false }));
+        alert("Failed to connect Spotify. Please try again.");
       }
     } catch (error) {
       console.error("Error exchanging Spotify code:", error);
+      alert("Error connecting Spotify. Please try again.");
+    } finally {
       setConnectingServices(prev => ({ ...prev, spotify: false }));
     }
   };
 
+  // Старый callback через cookies (legacy)
   const handleSpotifyCallback = () => {
     try {
       const cookies = document.cookie.split(';');
@@ -157,14 +147,13 @@ export default function ProfileClient() {
         setSpotifyUser(user);
         localStorage.setItem("spotify_user", JSON.stringify(user));
         localStorage.setItem("spotify_connected", "true");
-        setConnectingServices(prev => ({ ...prev, spotify: false }));
       }
     } catch (error) {
       console.error("Error handling Spotify callback:", error);
-      setConnectingServices(prev => ({ ...prev, spotify: false }));
     }
   };
 
+  // Last.fm callback
   const handleLastfmCallback = () => {
     try {
       const username = searchParams?.get("username");
@@ -174,7 +163,6 @@ export default function ProfileClient() {
         setLastfmUser(username);
         localStorage.setItem("lastfm_user", username);
         localStorage.setItem("lastfm_connected", "true");
-        setConnectingServices(prev => ({ ...prev, lastfm: false }));
         return;
       }
       
@@ -182,26 +170,21 @@ export default function ProfileClient() {
       const lastfmUserCookie = cookies.find(c => c.trim().startsWith('lastfm_user='));
       
       if (lastfmUserCookie) {
-        try {
-          const cookieValue = decodeURIComponent(lastfmUserCookie.split('=')[1]);
-          const cookieData = JSON.parse(cookieValue);
-          
-          if (cookieData.username) {
-            setLastfmUser(cookieData.username);
-            localStorage.setItem("lastfm_user", cookieData.username);
-            localStorage.setItem("lastfm_connected", "true");
-            setConnectingServices(prev => ({ ...prev, lastfm: false }));
-          }
-        } catch (e) {
-          console.error("Error parsing Last.fm cookie:", e);
+        const cookieValue = decodeURIComponent(lastfmUserCookie.split('=')[1]);
+        const cookieData = JSON.parse(cookieValue);
+        
+        if (cookieData.username) {
+          setLastfmUser(cookieData.username);
+          localStorage.setItem("lastfm_user", cookieData.username);
+          localStorage.setItem("lastfm_connected", "true");
         }
       }
     } catch (error) {
       console.error("Error handling Last.fm callback:", error);
-      setConnectingServices(prev => ({ ...prev, lastfm: false }));
     }
   };
 
+  // Подключение сервисов
   const connectSpotify = () => {
     setConnectingServices(prev => ({ ...prev, spotify: true }));
     window.location.href = '/api/spotify/auth';
@@ -224,38 +207,35 @@ export default function ProfileClient() {
 
   const disconnectLastfm = () => {
     setLastfmUser(null);
-    setLastfmData(null);
     localStorage.removeItem("lastfm_user");
     localStorage.removeItem("lastfm_connected");
     localStorage.removeItem("lastfm_profile");
     document.cookie = "lastfm_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     document.cookie = "lastfm_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-    setConnectingServices(prev => ({ ...prev, lastfm: false }));
   };
 
+  // Загрузка музыкального профиля
   const loadMusicProfile = async (userDataParam?: any) => {
-    const data = userDataParam || userData;
-    if (!data) return;
+    const data = userDataParam || userData || session?.user;
+    if (!data) {
+      console.error("No user data for music profile");
+      return;
+    }
     
     setProfileLoading(true);
     
     try {
-      const userId = data.nullifier_hash || 
-                     data.worldId || 
-                     data.id || 
-                     data.user_id ||
-                     data.email ||
-                     "demo_user";
-
+      const userId = data.id || data.email || "demo_user";
       console.log("Loading music profile for:", userId);
 
       const requestBody: any = { userId };
 
+      // Добавляем Apple Music если есть
       const appleLibrary = localStorage.getItem('apple_music_library');
       if (appleLibrary) {
         try {
           requestBody.appleLibrary = JSON.parse(appleLibrary);
-          console.log("Including Apple Music data in analysis");
+          console.log("Including Apple Music data");
         } catch (e) {
           console.error("Error parsing Apple Music library:", e);
         }
@@ -264,46 +244,40 @@ export default function ProfileClient() {
       const response = await fetch('/api/music/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // ВАЖНО для авторизации
         body: JSON.stringify(requestBody)
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        console.log("Music profile received:", result);
-        
-        const normalizedProfile = {
-          musicPersonality: result.profile?.musicPersonality || "Music Explorer",
-          energyLevel: result.profile?.energyLevel || 70,
-          diversityScore: result.profile?.diversityScore || 80,
-          topGenres: normalizeGenres(result.profile?.topGenres || []),
-          topTracks: result.profile?.topTracks || [],
-          topArtists: result.profile?.topArtists || [],
-          totalTracks: result.profile?.totalTracks || 0,
-          totalArtists: result.profile?.totalArtists || 0,
-          totalGenres: result.profile?.totalGenres || 0,
-          sources: result.profile?.sources || []
-        };
-        
-        setMusicProfile(normalizedProfile);
-        
-        localStorage.setItem('musicProfile', JSON.stringify(normalizedProfile));
-        localStorage.setItem('musicProfileTimestamp', Date.now().toString());
-      } else {
-        setMusicProfile({
-          topGenres: ["Pop", "Rock", "Electronic", "Hip-Hop", "Jazz"],
-          musicPersonality: "Eclectic Explorer",
-          energyLevel: 75,
-          diversityScore: 85,
-          topTracks: [],
-          topArtists: [],
-          totalTracks: 0,
-          totalArtists: 0,
-          totalGenres: 0,
-          sources: []
-        });
+      if (!response.ok) {
+        console.error("Music profile error:", response.status);
+        throw new Error(`HTTP ${response.status}`);
       }
+
+      const result = await response.json();
+      console.log("Music profile received:", result);
+      
+      const normalizedProfile = {
+        musicPersonality: result.profile?.musicPersonality || "Music Explorer",
+        energyLevel: result.profile?.energyLevel || 70,
+        diversityScore: result.profile?.diversityScore || 80,
+        topGenres: normalizeGenres(result.profile?.topGenres || []),
+        topTracks: result.profile?.topTracks || [],
+        topArtists: result.profile?.topArtists || [],
+        totalTracks: result.profile?.totalTracks || 0,
+        totalArtists: result.profile?.totalArtists || 0,
+        totalGenres: result.profile?.totalGenres || 0,
+        sources: result.profile?.sources || []
+      };
+      
+      setMusicProfile(normalizedProfile);
+      
+      // Сохраняем в localStorage
+      localStorage.setItem('musicProfile', JSON.stringify(normalizedProfile));
+      localStorage.setItem('musicProfileTimestamp', Date.now().toString());
     } catch (error) {
       console.error("Error loading music profile:", error);
+      
+      // Показываем дефолтный профиль
       setMusicProfile({
         topGenres: ["Pop", "Rock", "Electronic"],
         musicPersonality: "Music Lover",
@@ -321,6 +295,7 @@ export default function ProfileClient() {
     }
   };
 
+  // Нормализация жанров
   const normalizeGenres = (genres: any[]): string[] => {
     if (!Array.isArray(genres)) return [];
     
@@ -335,6 +310,7 @@ export default function ProfileClient() {
     }).filter(Boolean).slice(0, 10);
   };
 
+  // Logout
   const handleLogout = () => {
     localStorage.clear();
     sessionStorage.clear();
@@ -344,14 +320,9 @@ export default function ProfileClient() {
     router.push("/");
   };
 
+  // Helper функции
   const getUserId = () => {
-    const id = userData?.nullifier_hash || 
-               userData?.worldId || 
-               userData?.id || 
-               userData?.user_id ||
-               userData?.email ||
-               "User";
-    
+    const id = userData?.id || userData?.email || session?.user?.email || "User";
     if (typeof id === 'string' && id.length > 20) {
       return id.substring(0, 10) + "..." + id.substring(id.length - 10);
     }
@@ -359,10 +330,11 @@ export default function ProfileClient() {
   };
 
   const getUserName = () => {
-    return userData?.name || userData?.email?.split('@')[0] || "Guest User";
+    return userData?.name || session?.user?.name || userData?.email?.split('@')[0] || "Guest User";
   };
 
-  if (loading) {
+  // Проверка загрузки
+  if (status === "loading") {
     return (
       <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
         <div className="text-white text-xl">Loading...</div>
@@ -370,17 +342,19 @@ export default function ProfileClient() {
     );
   }
 
-  if (!userData) {
+  if (status === "unauthenticated") {
     return (
       <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black flex items-center justify-center">
-        <div className="text-white text-xl">No user data. Redirecting...</div>
+        <div className="text-white text-xl">Please sign in. Redirecting...</div>
       </div>
     );
   }
 
+  // RENDER
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-900 to-black">
       <div className="max-w-4xl mx-auto p-6">
+        {/* Header */}
         <div className="bg-white/10 backdrop-blur rounded-3xl p-6 mb-6">
           <div className="flex justify-between items-center">
             <div>
@@ -398,6 +372,7 @@ export default function ProfileClient() {
           </div>
         </div>
 
+        {/* Tabs */}
         <div className="flex gap-2 mb-6 justify-center flex-wrap">
           <button
             onClick={() => setActiveTab('services')}
@@ -436,11 +411,14 @@ export default function ProfileClient() {
           </button>
         </div>
 
+        {/* Content */}
         <div className="bg-white/10 backdrop-blur rounded-3xl p-6">
+          {/* Services Tab */}
           {activeTab === 'services' && (
             <div className="space-y-4">
               <h2 className="text-2xl font-bold text-white mb-4">Music Services</h2>
               
+              {/* Spotify */}
               <div className="bg-gradient-to-r from-green-900/30 to-green-700/30 rounded-xl p-4 border border-green-500/20">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
@@ -480,6 +458,7 @@ export default function ProfileClient() {
                 </div>
               </div>
 
+              {/* Last.fm */}
               <div className="bg-gradient-to-r from-red-900/30 to-red-700/30 rounded-xl p-4 border border-red-500/20">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
@@ -519,8 +498,10 @@ export default function ProfileClient() {
                 </div>
               </div>
 
+              {/* Apple Music */}
               <AppleMusicConnect />
 
+              {/* YouTube Music (Coming Soon) */}
               <div className="bg-gradient-to-r from-orange-900/30 to-orange-700/30 rounded-xl p-4 border border-orange-500/20 opacity-60">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
@@ -543,6 +524,7 @@ export default function ProfileClient() {
             </div>
           )}
 
+          {/* Music Portrait Tab */}
           {activeTab === 'portrait' && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-4">Music Portrait</h2>
@@ -565,6 +547,7 @@ export default function ProfileClient() {
                 </div>
               ) : musicProfile ? (
                 <div className="space-y-4">
+                  {/* Music Personality */}
                   <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-xl p-4 border border-purple-500/20">
                     <p className="text-gray-400 text-sm mb-1">Your Music Personality</p>
                     <p className="text-2xl font-bold text-white">
@@ -577,6 +560,7 @@ export default function ProfileClient() {
                     )}
                   </div>
 
+                  {/* Top Genres */}
                   <div className="bg-black/30 rounded-xl p-4">
                     <p className="text-gray-400 text-sm mb-3">Top Genres</p>
                     <div className="flex flex-wrap gap-2">
@@ -595,6 +579,7 @@ export default function ProfileClient() {
                     </div>
                   </div>
 
+                  {/* Top Tracks */}
                   {musicProfile.topTracks && musicProfile.topTracks.length > 0 && (
                     <div className="bg-black/30 rounded-xl p-4">
                       <p className="text-gray-400 text-sm mb-3">Recent Favorites</p>
@@ -615,6 +600,7 @@ export default function ProfileClient() {
                     </div>
                   )}
 
+                  {/* Metrics */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-black/30 rounded-xl p-4">
                       <p className="text-gray-400 text-sm mb-2">Energy Level</p>
@@ -647,6 +633,7 @@ export default function ProfileClient() {
                     </div>
                   </div>
 
+                  {/* Stats */}
                   <div className="grid grid-cols-3 gap-4">
                     <div className="bg-black/30 rounded-xl p-3 text-center">
                       <p className="text-xl font-bold text-purple-400">
@@ -682,11 +669,11 @@ export default function ProfileClient() {
             </div>
           )}
 
+          {/* Statistics Tab */}
           {activeTab === 'stats' && (
             <div>
               <h2 className="text-2xl font-bold text-white mb-4">Statistics</h2>
               
-              {/* CREATE PARTY BUTTON */}
               <div className="mb-6 text-center">
                 <button
                   onClick={() => router.push('/party/create')}
@@ -745,6 +732,7 @@ export default function ProfileClient() {
           )}
         </div>
 
+        {/* Back Button */}
         <div className="text-center mt-6">
           <button
             onClick={() => router.push("/")}
