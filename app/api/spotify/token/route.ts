@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 const SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
 
+// POST метод - для OAuth callback (обмен кода на токен)
 export async function POST(request: NextRequest) {
   try {
     const { code, state } = await request.json();
@@ -111,19 +112,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// GET метод - для получения токена из БД (для плеера)
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     
     if (!session?.user?.id) {
       return NextResponse.json({ 
-        connected: false,
-        message: 'Not authenticated' 
-      });
+        error: 'Not authenticated' 
+      }, { status: 401 });
     }
 
-    // Проверяем есть ли активное подключение Spotify
-    const musicService = await prisma.musicService.findFirst({
+    const spotifyService = await prisma.musicService.findFirst({
       where: {
         userId: session.user.id,
         service: 'SPOTIFY',
@@ -131,34 +131,69 @@ export async function GET() {
       }
     });
 
-    if (!musicService) {
+    if (!spotifyService || !spotifyService.accessToken) {
       return NextResponse.json({ 
-        connected: false,
-        message: 'Spotify not connected' 
-      });
+        error: 'Spotify not connected' 
+      }, { status: 404 });
     }
 
     // Проверяем не истёк ли токен
-    if (musicService.tokenExpiry && musicService.tokenExpiry < new Date()) {
-      // Токен истёк, нужно обновить
+    if (spotifyService.tokenExpiry && spotifyService.tokenExpiry < new Date()) {
+      // Если есть refresh token - обновляем
+      if (spotifyService.refreshToken) {
+        try {
+          const tokenResponse = await fetch(SPOTIFY_TOKEN_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Authorization': `Basic ${Buffer.from(
+                `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+              ).toString('base64')}`
+            },
+            body: new URLSearchParams({
+              grant_type: 'refresh_token',
+              refresh_token: spotifyService.refreshToken
+            })
+          });
+          
+          if (tokenResponse.ok) {
+            const tokens = await tokenResponse.json();
+            
+            // Обновляем токен в БД
+            await prisma.musicService.update({
+              where: { id: spotifyService.id },
+              data: {
+                accessToken: tokens.access_token,
+                tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000)
+              }
+            });
+            
+            // Возвращаем токен для плеера
+            return NextResponse.json({
+              accessToken: tokens.access_token,
+              expiresAt: new Date(Date.now() + tokens.expires_in * 1000)
+            });
+          }
+        } catch (error) {
+          console.error('Failed to refresh token:', error);
+        }
+      }
+      
       return NextResponse.json({ 
-        connected: false,
-        message: 'Token expired',
-        needsRefresh: true
-      });
+        error: 'Token expired and cannot refresh' 
+      }, { status: 401 });
     }
 
+    // Токен валидный - возвращаем его
     return NextResponse.json({
-      connected: true,
-      spotifyId: musicService.spotifyId,
-      expiresAt: musicService.tokenExpiry
+      accessToken: spotifyService.accessToken,
+      expiresAt: spotifyService.tokenExpiry
     });
 
   } catch (error) {
-    console.error('Error checking Spotify connection:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('Error getting Spotify token:', error);
+    return NextResponse.json({ 
+      error: 'Internal server error' 
+    }, { status: 500 });
   }
 }

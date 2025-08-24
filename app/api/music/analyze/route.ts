@@ -36,6 +36,9 @@ export async function POST(req: Request) {
       apple: null as any
     };
     
+    // Массив для унифицированных треков
+    let unifiedTopTracks: any[] = [];
+    
     for (const service of musicServices) {
       if (service.service === 'SPOTIFY' && service.accessToken) {
         // Получаем топ треки из Spotify
@@ -50,7 +53,7 @@ export async function POST(req: Request) {
           );
           
           if (topTracksResponse.ok) {
-            const topTracks = await topTracksResponse.json();
+            const topTracksData = await topTracksResponse.json();
             
             // Получаем топ артистов
             const topArtistsResponse = await fetch(
@@ -66,10 +69,26 @@ export async function POST(req: Request) {
               await topArtistsResponse.json() : { items: [] };
             
             musicData.spotify = {
-              topTracks: topTracks.items || [],
+              topTracks: topTracksData.items || [],
               topArtists: topArtists.items || [],
               connected: true
             };
+            
+            // ВАЖНО: Форматируем треки для unifiedTopTracks
+            const formattedTracks = topTracksData.items.map((track: any) => ({
+              id: track.id,
+              spotifyId: track.id,
+              name: track.name,
+              artist: track.artists[0]?.name || 'Unknown',
+              artists: track.artists,
+              album: track.album,
+              preview_url: track.preview_url,
+              duration_ms: track.duration_ms,
+              external_ids: track.external_ids
+            }));
+            
+            // Добавляем в унифицированный массив
+            unifiedTopTracks = [...unifiedTopTracks, ...formattedTracks];
           }
         } catch (error) {
           console.error('Error fetching Spotify data:', error);
@@ -90,6 +109,17 @@ export async function POST(req: Request) {
               username: service.lastfmUsername,
               connected: true
             };
+            
+            // Добавляем Last.fm треки в унифицированный массив
+            if (data.toptracks?.track) {
+              const lastfmTracks = data.toptracks.track.map((track: any) => ({
+                name: track.name,
+                artist: track.artist?.name || track.artist,
+                lastfmId: track.mbid,
+                playcount: track.playcount
+              }));
+              unifiedTopTracks = [...unifiedTopTracks, ...lastfmTracks];
+            }
           }
         } catch (error) {
           console.error('Error fetching Last.fm data:', error);
@@ -114,6 +144,8 @@ export async function POST(req: Request) {
         userId: session.user.id
       },
       update: {
+        // ВАЖНО: Сохраняем унифицированные треки для генерации плейлиста
+        unifiedTopTracks: unifiedTopTracks.length > 0 ? JSON.stringify(unifiedTopTracks) : Prisma.JsonNull,
         spotifyData: musicData.spotify ? JSON.stringify(musicData.spotify) : Prisma.JsonNull,
         lastfmData: musicData.lastfm ? JSON.stringify(musicData.lastfm) : Prisma.JsonNull,
         appleData: musicData.apple ? JSON.stringify(musicData.apple) : Prisma.JsonNull,
@@ -126,6 +158,7 @@ export async function POST(req: Request) {
       },
       create: {
         userId: session.user.id,
+        unifiedTopTracks: unifiedTopTracks.length > 0 ? JSON.stringify(unifiedTopTracks) : Prisma.JsonNull,
         spotifyData: musicData.spotify ? JSON.stringify(musicData.spotify) : Prisma.JsonNull,
         lastfmData: musicData.lastfm ? JSON.stringify(musicData.lastfm) : Prisma.JsonNull,
         appleData: musicData.apple ? JSON.stringify(musicData.apple) : Prisma.JsonNull,
@@ -194,9 +227,9 @@ function generateMusicPortrait(data: any) {
   return {
     personality,
     genres: topGenres,
-    energy: Math.random() * 100, // TODO: Calculate from audio features
+    energy: Math.random() * 100,
     diversity: Math.min(100, genreCount.size * 10),
-    mainstream: Math.random() * 100, // TODO: Calculate from popularity
+    mainstream: Math.random() * 100,
     totalTracks,
     servicesConnected: [
       data.spotify && 'Spotify',
