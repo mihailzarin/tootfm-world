@@ -25,62 +25,78 @@ export default function ProfileClient() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
-    try {
-      const stored = localStorage.getItem("user_data");
-      
-      if (!stored) {
-        router.push("/");
-        return;
-      }
-
-      const data = JSON.parse(stored);
-      console.log("User data loaded:", data);
-      setUserData(data);
-
-      const spotifyStored = localStorage.getItem("spotify_user");
-      if (spotifyStored) {
-        try {
-          const spotifyData = JSON.parse(spotifyStored);
-          setSpotifyUser(spotifyData);
-        } catch (e) {
-          console.error("Error parsing Spotify data:", e);
+    // ИЗМЕНЕНИЕ: Проверяем NextAuth сессию вместо localStorage
+    fetch('/api/auth/session')
+      .then(r => r.json())
+      .then(session => {
+        if (session && session.user) {
+          console.log("NextAuth session found:", session.user);
+          setUserData(session.user);
+          
+          // Сохраняем в localStorage для совместимости со старым кодом
+          localStorage.setItem("user_data", JSON.stringify(session.user));
+          
+          // Загружаем данные музыкальных сервисов
+          loadMusicServices();
+          
+          // Обрабатываем URL параметры
+          handleUrlParams();
+        } else {
+          console.log("No NextAuth session, redirecting to home");
+          router.push("/");
         }
-      }
-
-      const lastfmStored = localStorage.getItem("lastfm_user");
-      if (lastfmStored) {
-        setLastfmUser(lastfmStored);
-      }
-
-      const appleToken = localStorage.getItem("apple_music_token");
-      if (appleToken) {
-        setAppleMusicConnected(true);
-      }
-
-      // НОВОЕ: Обработка spotify_code из URL
-      const spotifyCode = searchParams?.get("spotify_code");
-      if (spotifyCode) {
-        console.log("Found Spotify code in URL, exchanging for token...");
-        handleSpotifyCodeExchange(spotifyCode, searchParams?.get("state"));
-      }
-      // Существующая логика для spotify=connected
-      else if (searchParams?.get("spotify") === "connected") {
-        handleSpotifyCallback();
-      }
-      
-      if (searchParams?.get("lastfm") === "connected") {
-        handleLastfmCallback();
-      }
-
-    } catch (error) {
-      console.error("Error loading data:", error);
-      router.push("/");
-    } finally {
-      setLoading(false);
-    }
+      })
+      .catch(error => {
+        console.error("Error checking session:", error);
+        router.push("/");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, [searchParams, router]);
 
-  // НОВАЯ ФУНКЦИЯ: Обмен кода на токен
+  // Загрузка данных музыкальных сервисов
+  const loadMusicServices = () => {
+    const spotifyStored = localStorage.getItem("spotify_user");
+    if (spotifyStored) {
+      try {
+        const spotifyData = JSON.parse(spotifyStored);
+        setSpotifyUser(spotifyData);
+      } catch (e) {
+        console.error("Error parsing Spotify data:", e);
+      }
+    }
+
+    const lastfmStored = localStorage.getItem("lastfm_user");
+    if (lastfmStored) {
+      setLastfmUser(lastfmStored);
+    }
+
+    const appleToken = localStorage.getItem("apple_music_token");
+    if (appleToken) {
+      setAppleMusicConnected(true);
+    }
+  };
+
+  // Обработка URL параметров
+  const handleUrlParams = () => {
+    // Обработка spotify_code из URL
+    const spotifyCode = searchParams?.get("spotify_code");
+    if (spotifyCode) {
+      console.log("Found Spotify code in URL, exchanging for token...");
+      handleSpotifyCodeExchange(spotifyCode, searchParams?.get("state"));
+    }
+    // Существующая логика для spotify=connected
+    else if (searchParams?.get("spotify") === "connected") {
+      handleSpotifyCallback();
+    }
+    
+    if (searchParams?.get("lastfm") === "connected") {
+      handleLastfmCallback();
+    }
+  };
+
+  // Обмен кода на токен
   const handleSpotifyCodeExchange = async (code: string, state: string | null) => {
     try {
       setConnectingServices(prev => ({ ...prev, spotify: true }));
@@ -228,6 +244,7 @@ export default function ProfileClient() {
                      data.worldId || 
                      data.id || 
                      data.user_id ||
+                     data.email ||
                      "demo_user";
 
       console.log("Loading music profile for:", userId);
@@ -332,12 +349,17 @@ export default function ProfileClient() {
                userData?.worldId || 
                userData?.id || 
                userData?.user_id ||
+               userData?.email ||
                "User";
     
     if (typeof id === 'string' && id.length > 20) {
       return id.substring(0, 10) + "..." + id.substring(id.length - 10);
     }
     return String(id);
+  };
+
+  const getUserName = () => {
+    return userData?.name || userData?.email?.split('@')[0] || "Guest User";
   };
 
   if (loading) {
@@ -364,7 +386,7 @@ export default function ProfileClient() {
             <div>
               <h1 className="text-3xl font-bold text-white mb-2">My Profile</h1>
               <p className="text-gray-300">
-                World ID: <span className="font-mono text-sm">{getUserId()}</span>
+                {getUserName()} • <span className="font-mono text-sm">{getUserId()}</span>
               </p>
             </div>
             <button
