@@ -10,13 +10,10 @@ export default function SpotifyConnect() {
 
   useEffect(() => {
     checkConnection();
-    handleCallback();
   }, []);
 
   const checkConnection = () => {
     const storedUser = localStorage.getItem('spotify_user');
-    const storedTokens = localStorage.getItem('spotify_tokens');
-    
     if (storedUser) {
       try {
         const userData = JSON.parse(storedUser);
@@ -26,71 +23,12 @@ export default function SpotifyConnect() {
         console.error('Error parsing Spotify user data:', e);
       }
     }
-
-    // Проверяем токены
-    if (storedTokens) {
-      try {
-        const tokens = JSON.parse(storedTokens);
-        // Проверяем не истёк ли токен
-        if (tokens.expires_at && new Date(tokens.expires_at) > new Date()) {
-          setIsConnected(true);
-        } else {
-          // Токен истёк
-          localStorage.removeItem('spotify_tokens');
-          setIsConnected(false);
-        }
-      } catch (e) {
-        console.error('Error parsing Spotify tokens:', e);
-      }
-    }
-  };
-
-  const handleCallback = async () => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const state = params.get('state');
-    
-    if (!code || !state) return;
-
-    setIsLoading(true);
-    
-    try {
-      const response = await fetch('/api/spotify/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ code, state }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success && data.user) {
-        // Сохраняем данные пользователя
-        localStorage.setItem('spotify_user', JSON.stringify(data.user));
-        setSpotifyUser(data.user);
-        
-        // ВАЖНО: Сохраняем токены
-        if (data.tokens) {
-          localStorage.setItem('spotify_tokens', JSON.stringify(data.tokens));
-        }
-        
-        setIsConnected(true);
-        
-        // Очищаем URL
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-    } catch (error) {
-      console.error('Error handling Spotify callback:', error);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const connectSpotify = () => {
     const clientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID;
-    const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
+    // ПРАВИЛЬНЫЙ REDIRECT URI!
+    const redirectUri = encodeURIComponent(window.location.origin + '/api/spotify/callback');
     const state = Math.random().toString(36).substring(7);
     const scope = encodeURIComponent('user-read-private user-read-email user-top-read user-library-read streaming user-read-playback-state user-modify-playback-state playlist-modify-public playlist-modify-private');
     
