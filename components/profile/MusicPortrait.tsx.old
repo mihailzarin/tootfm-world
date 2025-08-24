@@ -187,7 +187,7 @@ export default function MusicPortrait() {
       console.error('Apple Music fetch error:', e);
       return null;
     }
-  };
+  }
   const combineServiceData = (spotify: ServiceData | null, lastfm: ServiceData | null, apple: ServiceData | null) => {
 
     }
@@ -694,4 +694,3 @@ export default function MusicPortrait() {
       )}
     </div>
   );
-}

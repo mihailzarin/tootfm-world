@@ -1,97 +1,164 @@
-// app/api/spotify/token/route.ts
-// Endpoint для безопасного получения токена для Web Playback SDK
-
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
-export async function GET(request: NextRequest) {
+const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
+const SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
+
+export async function POST(request: NextRequest) {
   try {
-    // Получаем токен из httpOnly cookie
-    const spotifyToken = request.cookies.get('spotify_token')?.value;
-    const spotifyExpires = request.cookies.get('spotify_expires')?.value;
-    const spotifyRefresh = request.cookies.get('spotify_refresh')?.value;
+    const { code, state } = await request.json();
     
-    if (!spotifyToken) {
-      return NextResponse.json({
-        error: 'No Spotify token found',
-        requiresAuth: true
-      }, { status: 401 });
+    if (!code) {
+      return NextResponse.json({ error: 'No code provided' }, { status: 400 });
     }
-    
-    // Проверяем, не истек ли токен
-    if (spotifyExpires) {
-      const expiresAt = new Date(spotifyExpires);
-      const now = new Date();
-      const minutesLeft = Math.floor((expiresAt.getTime() - now.getTime()) / 1000 / 60);
-      
-      // Если токен истекает в ближайшие 5 минут, обновляем его
-      if (minutesLeft < 5 && spotifyRefresh) {
-        console.log('🔄 Token expiring soon, auto-refreshing...');
-        
-        const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID!;
-        const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET!;
-        
-        const refreshResponse = await fetch('https://accounts.spotify.com/api/token', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Authorization': 'Basic ' + Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')
-          },
-          body: new URLSearchParams({
-            grant_type: 'refresh_token',
-            refresh_token: spotifyRefresh
-          })
-        });
-        
-        if (refreshResponse.ok) {
-          const data = await refreshResponse.json();
-          
-          // Создаем response с новым токеном
-          const response = NextResponse.json({
-            token: data.access_token,
-            expiresIn: data.expires_in
-          });
-          
-          // Обновляем cookies
-          response.cookies.set('spotify_token', data.access_token, {
-            httpOnly: true,
-            secure: true,
-            sameSite: 'lax',
-            maxAge: data.expires_in || 3600
-          });
-          
-          const newExpiresAt = new Date(Date.now() + (data.expires_in * 1000));
-          response.cookies.set('spotify_expires', newExpiresAt.toISOString(), {
-            httpOnly: false,
-            secure: true,
-            sameSite: 'lax',
-            maxAge: data.expires_in || 3600
-          });
-          
-          if (data.refresh_token) {
-            response.cookies.set('spotify_refresh', data.refresh_token, {
-              httpOnly: true,
-              secure: true,
-              sameSite: 'lax',
-              maxAge: 60 * 60 * 24 * 365
-            });
-          }
-          
-          console.log('✅ Token refreshed successfully');
-          return response;
-        }
-      }
-    }
-    
-    // Возвращаем текущий токен
-    return NextResponse.json({
-      token: spotifyToken,
-      expiresAt: spotifyExpires || null
+
+    // Получаем токены от Spotify
+    const tokenResponse = await fetch(SPOTIFY_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${Buffer.from(
+          `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+        ).toString('base64')}`
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: process.env.SPOTIFY_REDIRECT_URI!
+      })
     });
+
+    if (!tokenResponse.ok) {
+      const error = await tokenResponse.text();
+      console.error('Spotify token error:', error);
+      return NextResponse.json({ error: 'Failed to get token' }, { status: 400 });
+    }
+
+    const tokenData = await tokenResponse.json();
+
+    // Получаем профиль пользователя
+    const profileResponse = await fetch(`${SPOTIFY_API_BASE}/me`, {
+      headers: {
+        'Authorization': `Bearer ${tokenData.access_token}`
+      }
+    });
+
+    if (!profileResponse.ok) {
+      return NextResponse.json({ error: 'Failed to get profile' }, { status: 400 });
+    }
+
+    const profile = await profileResponse.json();
     
-  } catch (error) {
-    console.error('❌ Error getting token:', error);
+    // Получаем сессию NextAuth
+    const session = await getServerSession(authOptions);
+    
+    if (session?.user?.id) {
+      // Сохраняем в БД
+      await prisma.musicService.upsert({
+        where: {
+          userId_service: {
+            userId: session.user.id,
+            service: 'SPOTIFY'
+          }
+        },
+        update: {
+          spotifyId: profile.id,
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+          tokenExpiry: new Date(Date.now() + tokenData.expires_in * 1000),
+          isActive: true,
+          lastSynced: new Date()
+        },
+        create: {
+          userId: session.user.id,
+          service: 'SPOTIFY',
+          spotifyId: profile.id,
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+          tokenExpiry: new Date(Date.now() + tokenData.expires_in * 1000),
+          isActive: true
+        }
+      });
+    }
+
+    // Возвращаем данные для сохранения в localStorage
     return NextResponse.json({
-      error: 'Failed to get token'
-    }, { status: 500 });
+      success: true,
+      user: {
+        id: profile.id,
+        display_name: profile.display_name,
+        email: profile.email,
+        images: profile.images,
+        product: profile.product
+      },
+      // ВАЖНО: Добавляем токены для localStorage
+      tokens: {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        expires_in: tokenData.expires_in,
+        expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Token exchange error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET() {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.id) {
+      return NextResponse.json({ 
+        connected: false,
+        message: 'Not authenticated' 
+      });
+    }
+
+    // Проверяем есть ли активное подключение Spotify
+    const musicService = await prisma.musicService.findFirst({
+      where: {
+        userId: session.user.id,
+        service: 'SPOTIFY',
+        isActive: true
+      }
+    });
+
+    if (!musicService) {
+      return NextResponse.json({ 
+        connected: false,
+        message: 'Spotify not connected' 
+      });
+    }
+
+    // Проверяем не истёк ли токен
+    if (musicService.tokenExpiry && musicService.tokenExpiry < new Date()) {
+      // Токен истёк, нужно обновить
+      return NextResponse.json({ 
+        connected: false,
+        message: 'Token expired',
+        needsRefresh: true
+      });
+    }
+
+    return NextResponse.json({
+      connected: true,
+      spotifyId: musicService.spotifyId,
+      expiresAt: musicService.tokenExpiry
+    });
+
+  } catch (error) {
+    console.error('Error checking Spotify connection:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }

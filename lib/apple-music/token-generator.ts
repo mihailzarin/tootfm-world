@@ -1,44 +1,41 @@
 import jwt from 'jsonwebtoken';
-import fs from 'fs';
-import path from 'path';
 
 export function generateAppleMusicToken(): string {
-  try {
-    const teamId = process.env.APPLE_TEAM_ID;
-    const keyId = process.env.APPLE_KEY_ID;
-    let privateKey = process.env.APPLE_PRIVATE_KEY;
-    
-    // Читаем ключ из файла
-    if (!privateKey) {
-      const keyPath = path.join(process.cwd(), 'keys', `AuthKey_${keyId}.p8`);
-      if (fs.existsSync(keyPath)) {
-        console.log('📁 Reading Apple key from file:', keyPath);
-        privateKey = fs.readFileSync(keyPath, 'utf8');
-      } else {
-        throw new Error(`Key file not found: ${keyPath}`);
-      }
-    }
-    
-    if (!teamId || !keyId || !privateKey) {
-      throw new Error('Missing Apple Music credentials');
-    }
-    
-    // Генерируем токен
-    const token = jwt.sign({}, privateKey, {
-      algorithm: 'ES256',
-      expiresIn: '180d',
-      issuer: teamId,
-      header: {
-        alg: 'ES256',
-        kid: keyId
-      }
+  // Используем ПРАВИЛЬНЫЕ названия переменных!
+  const teamId = process.env.APPLE_MUSIC_TEAM_ID;
+  const keyId = process.env.APPLE_MUSIC_KEY_ID;
+  const privateKey = process.env.APPLE_MUSIC_PRIVATE_KEY;
+
+  if (!teamId || !keyId || !privateKey) {
+    console.error('Missing Apple Music credentials:', {
+      teamId: !!teamId,
+      keyId: !!keyId,
+      privateKey: !!privateKey
     });
+    throw new Error('Apple Music configuration is incomplete');
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const expires = now + (6 * 30 * 24 * 60 * 60); // 6 месяцев
+
+  const payload = {
+    iss: teamId,
+    iat: now,
+    exp: expires
+  };
+
+  try {
+    // Форматируем ключ правильно
+    const formattedKey = privateKey.replace(/\\n/g, '\n');
     
-    console.log('✅ Apple Music token generated successfully');
+    const token = jwt.sign(payload, formattedKey, {
+      algorithm: 'ES256',
+      keyid: keyId
+    });
+
     return token;
-    
   } catch (error) {
-    console.error('Token generation error:', error);
-    throw error;
+    console.error('Failed to generate Apple Music token:', error);
+    throw new Error('Token generation failed');
   }
 }
