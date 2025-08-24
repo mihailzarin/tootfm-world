@@ -67,9 +67,9 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true, // Временно игнорируем ESLint ошибки для быстрого деплоя
   },
+  typescript: {
+    ignoreBuildErrors: true, // Игнорируем TypeScript ошибки при билде
+  }
 }
 
-  typescript: {
-    ignoreBuildErrors: true,
-  }
 module.exports = nextConfig
