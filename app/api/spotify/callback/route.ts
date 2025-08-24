@@ -129,14 +129,7 @@ export async function GET(req: Request) {
           refreshToken: tokens.refresh_token || existing.refreshToken, // Spotify не всегда возвращает refresh_token
           tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
           isActive: true,
-          lastSynced: new Date(),
-          // Сохраняем дополнительную информацию
-          metadata: {
-            displayName: profile.display_name,
-            email: profile.email,
-            product: profile.product,
-            country: profile.country
-          }
+          lastSynced: new Date()
         }
       });
       console.log('Updated existing Spotify connection');
@@ -149,13 +142,7 @@ export async function GET(req: Request) {
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
           tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
-          isActive: true,
-          metadata: {
-            displayName: profile.display_name,
-            email: profile.email,
-            product: profile.product,
-            country: profile.country
-          }
+          isActive: true
         }
       });
       console.log('Created new Spotify connection');
