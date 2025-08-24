@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth'; // Изменен импорт!
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(req: Request) {
@@ -8,24 +8,32 @@ export async function GET(req: Request) {
   const code = searchParams.get('code');
   const error = searchParams.get('error');
   
-  // Обработка отмены авторизации
+  console.log('=== SPOTIFY CALLBACK ===');
+  console.log('Code:', code ? 'present' : 'missing');
+  console.log('Error:', error);
+  
   if (error) {
+    console.log('User denied authorization');
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=spotify_denied`);
   }
   
   if (!code) {
+    console.log('No code in callback');
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=no_code`);
   }
   
   try {
-    // Проверяем сессию
     const session = await getServerSession(authOptions);
+    console.log('Session exists:', !!session);
+    console.log('User ID:', session?.user?.id);
     
     if (!session?.user?.id) {
+      console.log('No session found');
       return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/login`);
     }
     
     // Обмениваем код на токены
+    console.log('Exchanging code for tokens...');
     const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
       method: 'POST',
       headers: {
@@ -42,14 +50,15 @@ export async function GET(req: Request) {
     });
     
     if (!tokenResponse.ok) {
-      const error = await tokenResponse.text();
-      console.error('Spotify token error:', error);
+      const errorText = await tokenResponse.text();
+      console.error('Token exchange failed:', errorText);
       return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=token_failed`);
     }
     
     const tokens = await tokenResponse.json();
+    console.log('Tokens received');
     
-    // Получаем профиль пользователя Spotify
+    // Получаем профиль
     const profileResponse = await fetch('https://api.spotify.com/v1/me', {
       headers: {
         'Authorization': `Bearer ${tokens.access_token}`
@@ -57,46 +66,58 @@ export async function GET(req: Request) {
     });
     
     if (!profileResponse.ok) {
+      console.error('Profile fetch failed');
       return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=profile_failed`);
     }
     
     const profile = await profileResponse.json();
+    console.log('Spotify profile:', profile.id);
     
-    // Сохраняем или обновляем в БД
-    await prisma.musicService.upsert({
+    // ИСПОЛЬЗУЕМ findFirst + update/create вместо upsert
+    console.log('Saving to database...');
+    
+    const existing = await prisma.musicService.findFirst({
       where: {
-        userId_service: {
-          userId: session.user.id,
-          service: 'SPOTIFY'
-        }
-      },
-      update: {
-        spotifyId: profile.id,
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
-        isActive: true,
-        lastSynced: new Date()
-      },
-      create: {
         userId: session.user.id,
-        service: 'SPOTIFY',
-        spotifyId: profile.id,
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
-        isActive: true,
-        lastSynced: new Date()
+        service: 'SPOTIFY'
       }
     });
     
-    console.log(`Spotify connected for user ${session.user.id}`);
+    if (existing) {
+      await prisma.musicService.update({
+        where: { id: existing.id },
+        data: {
+          spotifyId: profile.id,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
+          isActive: true,
+          lastSynced: new Date()
+        }
+      });
+      console.log('Updated existing Spotify connection');
+    } else {
+      await prisma.musicService.create({
+        data: {
+          userId: session.user.id,
+          service: 'SPOTIFY',
+          spotifyId: profile.id,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
+          isActive: true
+        }
+      });
+      console.log('Created new Spotify connection');
+    }
     
-    // Редирект обратно на профиль с успехом
+    console.log('✅ Spotify connected successfully');
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?spotify=connected`);
     
   } catch (error) {
-    console.error('Spotify callback error:', error);
+    console.error('Callback error:', error);
+    console.error('Error details:', error instanceof Error ? error.message : 'Unknown');
+    console.error('Error stack:', error instanceof Error ? error.stack : '');
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=spotify_error`);
   }
 }
