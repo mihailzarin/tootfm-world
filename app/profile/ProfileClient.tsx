@@ -1,456 +1,547 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useSession } from "next-auth/react";
-import AppleMusicConnect from "@/components/music-services/AppleMusicConnect";
+import { useState, useEffect } from 'react';
+import { useSession, signOut } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { Music, Users, Globe, Lock, User, LogOut, Loader2, CheckCircle, XCircle, AlertCircle, Headphones, Radio, Disc3, BarChart3, TrendingUp, Calendar, Hash, Mic2, PlayCircle } from 'lucide-react';
+import SpotifyPlayer from '@/components/SpotifyPlayer';
+import WorldIDWidget from '@/components/WorldIDWidget';
+
+interface MusicService {
+  id: string;
+  service: string;
+  spotifyId?: string;
+  lastfmUsername?: string;
+  appleMusicId?: string;
+  isActive: boolean;
+  lastSynced?: string;
+}
+
+interface MusicProfile {
+  id: string;
+  unifiedTopTracks?: any[];
+  unifiedTopArtists?: any[];
+  unifiedTopGenres?: any[];
+  lastAnalyzed?: string;
+}
 
 export default function ProfileClient() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const { data: session, status } = useSession();
-  
-  // States for services
-  const [spotifyConnected, setSpotifyConnected] = useState(false);
-  const [spotifyUser, setSpotifyUser] = useState<Record<string, any> | null>(null);
-  const [lastfmUser, setLastfmUser] = useState<string | null>(null);
-  const [appleMusicConnected, setAppleMusicConnected] = useState(false);
-  
-  // UI states
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('services');
-  const [musicProfile, setMusicProfile] = useState<Record<string, any> | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
+  const [services, setServices] = useState<MusicService[]>([]);
+  const [musicProfile, setMusicProfile] = useState<MusicProfile | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [worldId, setWorldId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Проверка статуса Spotify через API
-  const checkSpotifyStatus = async () => {
-    try {
-      const response = await fetch('/api/spotify/status', {
-        credentials: 'include'
-      });
-      const data = await response.json();
-      
-      if (data.connected && data.user) {
-        setSpotifyConnected(true);
-        setSpotifyUser(data.user);
-        localStorage.setItem('spotify_user', JSON.stringify(data.user));
-      } else {
-        setSpotifyConnected(false);
-        setSpotifyUser(null);
-        localStorage.removeItem('spotify_user');
-      }
-    } catch (error) {
-      console.error('Error checking Spotify status:', error);
-      setSpotifyConnected(false);
-    }
-  };
-
-  // Проверка Last.fm
-  const checkLastfmStatus = () => {
-    const username = localStorage.getItem('lastfm_username');
-    if (username) {
-      setLastfmUser(username);
-    }
-  };
-
-  // Проверка Apple Music
-  const checkAppleMusicStatus = () => {
-    const token = localStorage.getItem('music.73tyd562w2.media-user-token');
-    setAppleMusicConnected(!!token);
-  };
-
-  // Инициализация при загрузке
+  // Загрузка данных при монтировании и после redirect
   useEffect(() => {
-    if (status === 'authenticated' && session?.user) {
-      localStorage.setItem('user_data', JSON.stringify({
-        name: session.user.name,
-        email: session.user.email,
-        image: session.user.image,
-        id: session.user.id
-      }));
-      
-      checkSpotifyStatus();
-      checkLastfmStatus();
-      checkAppleMusicStatus();
-    } else if (status === 'unauthenticated') {
-      router.push('/login');
-    }
-  }, [status, session, router]);
-
-  // Обработка OAuth callbacks
-  useEffect(() => {
-    if (searchParams.get('spotify') === 'connected') {
-      console.log('Spotify connected successfully!');
-      checkSpotifyStatus();
-      router.replace('/profile');
+    // Проверяем URL параметры после redirect от сервисов
+    const params = new URLSearchParams(window.location.search);
+    const spotifyConnected = params.get('spotify') === 'connected';
+    const lastfmConnected = params.get('lastfm') === 'connected';
+    const appleConnected = params.get('apple') === 'connected';
+    const errorParam = params.get('error');
+    const tabParam = params.get('tab');
+    
+    // Устанавливаем вкладку если указана
+    if (tabParam) {
+      setActiveTab(tabParam);
     }
     
-    const error = searchParams.get('error');
-    if (error) {
-      console.error('OAuth error:', error);
-      setProfileError(getErrorMessage(error));
-      router.replace('/profile');
-    }
-  }, [searchParams, router]);
-
-  // Функция подключения Spotify
-  const connectSpotify = () => {
-    const clientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID;
-    const redirectUri = process.env.NEXT_PUBLIC_SPOTIFY_REDIRECT_URI;
-    const scopes = [
-      'user-read-private',
-      'user-read-email',
-      'user-top-read',
-      'user-library-read',
-      'playlist-read-private',
-      'playlist-modify-public',
-      'playlist-modify-private',
-      'streaming',
-      'user-read-playback-state',
-      'user-modify-playback-state'
-    ].join(' ');
-
-    const authUrl = `https://accounts.spotify.com/authorize?` +
-      `client_id=${clientId}&` +
-      `response_type=code&` +
-      `redirect_uri=${encodeURIComponent(redirectUri!)}&` +
-      `scope=${encodeURIComponent(scopes)}&` +
-      `show_dialog=false`;
-
-    window.location.href = authUrl;
-  };
-
-  // Функция отключения Spotify
-  const disconnectSpotify = async () => {
-    try {
-      const response = await fetch('/api/spotify/disconnect', {
-        method: 'POST',
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        setSpotifyConnected(false);
-        setSpotifyUser(null);
-        localStorage.removeItem('spotify_user');
+    // Показываем ошибку если есть
+    if (errorParam) {
+      if (errorParam === 'spotify_error') {
+        setError('Failed to connect Spotify. Please try again.');
+      } else if (errorParam === 'apple_error') {
+        setError('Failed to connect Apple Music. Please try again.');
       }
-    } catch (error) {
-      console.error('Error disconnecting Spotify:', error);
+    }
+    
+    // Загружаем данные
+    if (session?.user?.email) {
+      fetchUserData();
+    }
+    
+    // Очищаем URL параметры
+    if (spotifyConnected || lastfmConnected || appleConnected || errorParam || tabParam) {
+      window.history.replaceState({}, '', '/profile');
+    }
+  }, [session]);
+
+  const fetchUserData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Загружаем данные пользователя
+      const userResponse = await fetch('/api/user/profile');
+      if (userResponse.ok) {
+        const userData = await userResponse.json();
+        setWorldId(userData.worldId);
+        setMusicProfile(userData.musicProfile);
+      }
+      
+      // Загружаем подключенные сервисы
+      await fetchServices();
+    } catch (err) {
+      console.error('Error fetching user data:', err);
+      setError('Failed to load profile data');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Функция подключения Last.fm
+  const fetchServices = async () => {
+    try {
+      const response = await fetch('/api/music/services');
+      if (response.ok) {
+        const data = await response.json();
+        setServices(data.services || []);
+      }
+    } catch (err) {
+      console.error('Error fetching services:', err);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut({ 
+      callbackUrl: '/login',
+      redirect: true 
+    });
+  };
+
+  const connectSpotify = () => {
+    window.location.href = '/api/spotify/auth';
+  };
+
   const connectLastfm = () => {
-    const apiKey = process.env.NEXT_PUBLIC_LASTFM_API_KEY;
-    const callbackUrl = `${window.location.origin}/api/music/lastfm/callback`;
-    const authUrl = `https://www.last.fm/api/auth/?api_key=${apiKey}&cb=${encodeURIComponent(callbackUrl)}`;
-    window.location.href = authUrl;
+    window.location.href = '/api/music/lastfm/connect';
   };
 
-  // Функция отключения Last.fm
-  const disconnectLastfm = () => {
-    localStorage.removeItem('lastfm_username');
-    localStorage.removeItem('lastfm_session_key');
-    setLastfmUser(null);
+  const connectAppleMusic = async () => {
+    try {
+      const response = await fetch('/api/music/apple/token');
+      const data = await response.json();
+      
+      if (data.token) {
+        // Инициализируем MusicKit
+        const script = document.createElement('script');
+        script.src = 'https://js-cdn.music.apple.com/musickit/v3/musickit.js';
+        script.async = true;
+        document.body.appendChild(script);
+        
+        script.onload = async () => {
+          // @ts-ignore
+          const music = window.MusicKit.configure({
+            developerToken: data.token,
+            app: {
+              name: 'tootFM',
+              build: '1.0.0'
+            }
+          });
+          
+          try {
+            // @ts-ignore
+            const musicInstance = window.MusicKit.getInstance();
+            await musicInstance.authorize();
+            
+            // Отправляем токен на сервер
+            const saveResponse = await fetch('/api/music/apple/connect', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                userToken: musicInstance.musicUserToken 
+              })
+            });
+            
+            if (saveResponse.ok) {
+              await fetchServices();
+              setError(null);
+            } else {
+              setError('Failed to save Apple Music connection');
+            }
+          } catch (err) {
+            console.error('Apple Music auth error:', err);
+            setError('Failed to connect Apple Music. Please try again.');
+          }
+        };
+      }
+    } catch (err) {
+      console.error('Error connecting Apple Music:', err);
+      setError('Failed to connect Apple Music. Please try again.');
+    }
   };
 
-  // Функция генерации музыкального портрета
-  const generateMusicProfile = async () => {
-    setProfileLoading(true);
-    setProfileError(null);
+  const disconnectService = async (service: string) => {
+    try {
+      const endpoint = service === 'SPOTIFY' 
+        ? '/api/spotify/disconnect'
+        : service === 'LASTFM'
+        ? '/api/music/lastfm/disconnect'
+        : '/api/music/apple/disconnect';
+        
+      const response = await fetch(endpoint, { method: 'POST' });
+      if (response.ok) {
+        await fetchServices();
+      }
+    } catch (err) {
+      console.error(`Error disconnecting ${service}:`, err);
+    }
+  };
+
+  const analyzeMusicTaste = async () => {
+    setIsAnalyzing(true);
+    setError(null);
     
     try {
       const response = await fetch('/api/music/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include'
+        method: 'POST'
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to analyze music profile');
-      }
-
-      const data = await response.json();
       
-      if (data.success && data.profile) {
+      if (response.ok) {
+        const data = await response.json();
         setMusicProfile(data.profile);
         setActiveTab('portrait');
       } else {
-        throw new Error('Invalid response format');
+        setError('Failed to analyze music. Please make sure you have at least one music service connected.');
       }
-    } catch (error: any) {
-      console.error('Error generating music profile:', error);
-      setProfileError(error.message || 'Failed to generate music portrait');
+    } catch (err) {
+      console.error('Error analyzing music:', err);
+      setError('Failed to analyze music taste. Please try again.');
     } finally {
-      setProfileLoading(false);
+      setIsAnalyzing(false);
     }
   };
 
-  // Вспомогательная функция для сообщений об ошибках
-  const getErrorMessage = (error: string): string => {
-    switch(error) {
-      case 'spotify_denied':
-        return 'Spotify authorization was cancelled';
-      case 'no_code':
-        return 'No authorization code received from Spotify';
-      case 'token_failed':
-        return 'Failed to get Spotify access token';
-      case 'profile_failed':
-        return 'Failed to get Spotify profile';
-      case 'spotify_error':
-        return 'An error occurred connecting to Spotify';
-      default:
-        return 'An unexpected error occurred';
-    }
-  };
+  const isSpotifyConnected = services.some(s => s.service === 'SPOTIFY' && s.isActive);
+  const isLastfmConnected = services.some(s => s.service === 'LASTFM' && s.isActive);
+  const isAppleConnected = services.some(s => s.service === 'APPLE_MUSIC' && s.isActive);
+  const hasAnyService = isSpotifyConnected || isLastfmConnected || isAppleConnected;
 
-  // Если загружается сессия
-  if (status === 'loading') {
+  if (status === 'loading' || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
-        </div>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-white" />
       </div>
     );
   }
 
-  // Если не авторизован
-  if (status === 'unauthenticated') {
+  if (!session) {
+    router.push('/login');
     return null;
   }
 
   return (
-    <main className="container mx-auto px-4 py-8 max-w-6xl">
+    <div className="min-h-screen bg-black text-white">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div className="flex items-center gap-4">
-          {session?.user?.image && (
-            <img 
-              src={session.user.image} 
-              alt={session.user.name || 'User'} 
-              className="w-16 h-16 rounded-full"
-            />
-          )}
-          <div>
-            <h1 className="text-2xl font-bold">{session?.user?.name || 'User'}</h1>
-            <p className="text-gray-600">{session?.user?.email}</p>
+      <div className="border-b border-gray-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-6">
+            <div className="flex items-center space-x-4">
+              <img
+                src={session.user?.image || '/default-avatar.png'}
+                alt="Profile"
+                className="w-12 h-12 rounded-full"
+              />
+              <div>
+                <h1 className="text-2xl font-bold">{session.user?.name || 'User'}</h1>
+                <p className="text-gray-400">{session.user?.email}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="flex items-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign Out</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Error Alert */}
-      {profileError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-          <p>{profileError}</p>
+      {/* Error Display */}
+      {error && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+          <div className="bg-red-900/20 border border-red-500 rounded-lg p-4 flex items-center space-x-2">
+            <XCircle className="w-5 h-5 text-red-500" />
+            <span className="text-red-400">{error}</span>
+          </div>
         </div>
       )}
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex gap-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+        <div className="flex space-x-1 border-b border-gray-800">
           <button
             onClick={() => setActiveTab('services')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`px-4 py-2 font-medium transition ${
               activeTab === 'services'
-                ? 'border-purple-500 text-purple-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                ? 'text-white border-b-2 border-white'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
             Music Services
           </button>
           <button
             onClick={() => setActiveTab('portrait')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`px-4 py-2 font-medium transition ${
               activeTab === 'portrait'
-                ? 'border-purple-500 text-purple-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                ? 'text-white border-b-2 border-white'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
             Music Portrait
           </button>
           <button
-            onClick={() => setActiveTab('parties')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'parties'
-                ? 'border-purple-500 text-purple-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+            onClick={() => setActiveTab('identity')}
+            className={`px-4 py-2 font-medium transition ${
+              activeTab === 'identity'
+                ? 'text-white border-b-2 border-white'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
-            My Parties
+            World ID
           </button>
-        </nav>
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === 'services' && (
-        <div className="grid md:grid-cols-3 gap-6">
-          {/* Spotify Card */}
-          <div className="bg-green-50 rounded-lg p-6 border border-green-200">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Spotify</h3>
-              {spotifyConnected && (
-                <span className="text-green-600 text-sm">Connected</span>
-              )}
-            </div>
-            
-            {spotifyConnected && spotifyUser ? (
-              <div>
-                <p className="text-sm text-gray-600 mb-3">
-                  {spotifyUser.display_name || spotifyUser.email}
-                </p>
-                <button
-                  onClick={disconnectSpotify}
-                  className="w-full bg-white text-gray-700 px-4 py-2 rounded-lg border hover:bg-gray-50"
-                >
-                  Disconnect
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={connectSpotify}
-                className="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-              >
-                Connect Spotify
-              </button>
-            )}
-          </div>
-
-          {/* Last.fm Card */}
-          <div className="bg-red-50 rounded-lg p-6 border border-red-200">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Last.fm</h3>
-              {lastfmUser && (
-                <span className="text-red-600 text-sm">Connected</span>
-              )}
-            </div>
-            
-            {lastfmUser ? (
-              <div>
-                <p className="text-sm text-gray-600 mb-3">@{lastfmUser}</p>
-                <button
-                  onClick={disconnectLastfm}
-                  className="w-full bg-white text-gray-700 px-4 py-2 rounded-lg border hover:bg-gray-50"
-                >
-                  Disconnect
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={connectLastfm}
-                className="w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
-              >
-                Connect Last.fm
-              </button>
-            )}
-          </div>
-
-          {/* Apple Music Card */}
-          <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Apple Music</h3>
-              {appleMusicConnected && (
-                <span className="text-gray-600 text-sm">Connected</span>
-              )}
-            </div>
-            
-            {appleMusicConnected ? (
-              <div>
-                <p className="text-sm text-gray-600 mb-3">Connected</p>
-                <button
-                  onClick={() => {
-                    localStorage.removeItem('music.73tyd562w2.media-user-token');
-                    setAppleMusicConnected(false);
-                  }}
-                  className="w-full bg-white text-gray-700 px-4 py-2 rounded-lg border hover:bg-gray-50"
-                >
-                  Disconnect
-                </button>
-              </div>
-            ) : (
-              <AppleMusicConnect />
-            )}
-          </div>
         </div>
-      )}
 
-      {activeTab === 'portrait' && (
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          {!musicProfile ? (
-            <div className="text-center py-12">
-              <h2 className="text-xl font-semibold mb-4">Generate Your Music Portrait</h2>
-              <p className="text-gray-600 mb-6">
-                Connect at least one music service to generate your personalized music portrait
-              </p>
-              <button
-                onClick={generateMusicProfile}
-                disabled={profileLoading || (!spotifyConnected && !lastfmUser && !appleMusicConnected)}
-                className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 disabled:bg-gray-400"
-              >
-                {profileLoading ? 'Analyzing...' : 'Generate Portrait'}
-              </button>
-            </div>
-          ) : (
-            <div>
-              <h2 className="text-2xl font-bold mb-4">{musicProfile.personality}</h2>
-              
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-purple-600">
-                    {Math.round(musicProfile.energy || 0)}%
+        {/* Tab Content */}
+        <div className="mt-8">
+          {activeTab === 'services' && (
+            <div className="space-y-6">
+              {/* Spotify */}
+              <div className="bg-gray-900 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center">
+                      <Music className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">Spotify</h3>
+                      {isSpotifyConnected ? (
+                        <p className="text-green-400 text-sm">Connected</p>
+                      ) : (
+                        <p className="text-gray-400 text-sm">Not connected</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-600">Energy</div>
+                  {isSpotifyConnected ? (
+                    <button
+                      onClick={() => disconnectService('SPOTIFY')}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition"
+                    >
+                      Disconnect
+                    </button>
+                  ) : (
+                    <button
+                      onClick={connectSpotify}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition"
+                    >
+                      Connect Spotify
+                    </button>
+                  )}
                 </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-purple-600">
-                    {Math.round(musicProfile.diversity || 0)}%
+                {isSpotifyConnected && (
+                  <div className="mt-4">
+                    <SpotifyPlayer />
                   </div>
-                  <div className="text-sm text-gray-600">Diversity</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-purple-600">
-                    {Math.round(musicProfile.mainstream || 0)}%
+                )}
+              </div>
+
+              {/* Last.fm */}
+              <div className="bg-gray-900 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-red-600 rounded-lg flex items-center justify-center">
+                      <Radio className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">Last.fm</h3>
+                      {isLastfmConnected ? (
+                        <p className="text-green-400 text-sm">Connected</p>
+                      ) : (
+                        <p className="text-gray-400 text-sm">Not connected</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-600">Mainstream</div>
+                  {isLastfmConnected ? (
+                    <button
+                      onClick={() => disconnectService('LASTFM')}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition"
+                    >
+                      Disconnect
+                    </button>
+                  ) : (
+                    <button
+                      onClick={connectLastfm}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition"
+                    >
+                      Connect Last.fm
+                    </button>
+                  )}
                 </div>
               </div>
-              
-              {musicProfile.genres && musicProfile.genres.length > 0 && (
-                <div>
-                  <h3 className="font-semibold mb-2">Top Genres</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {musicProfile.genres.map((genre: string, index: number) => (
-                      <span 
-                        key={index}
-                        className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm"
-                      >
-                        {genre}
+
+              {/* Apple Music */}
+              <div className="bg-gray-900 rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-lg flex items-center justify-center">
+                      <Headphones className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">Apple Music</h3>
+                      {isAppleConnected ? (
+                        <p className="text-green-400 text-sm">Connected</p>
+                      ) : (
+                        <p className="text-gray-400 text-sm">Not connected</p>
+                      )}
+                    </div>
+                  </div>
+                  {isAppleConnected ? (
+                    <button
+                      onClick={() => disconnectService('APPLE_MUSIC')}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition"
+                    >
+                      Disconnect
+                    </button>
+                  ) : (
+                    <button
+                      onClick={connectAppleMusic}
+                      className="px-4 py-2 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 rounded-lg transition"
+                    >
+                      Connect Apple Music
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'portrait' && (
+            <div className="space-y-6">
+              {!musicProfile ? (
+                <div className="bg-gray-900 rounded-lg p-8 text-center">
+                  <Disc3 className="w-16 h-16 mx-auto text-gray-600 mb-4" />
+                  <h3 className="text-xl font-semibold mb-2">No Music Portrait Yet</h3>
+                  <p className="text-gray-400 mb-6">
+                    Connect at least one music service and analyze your music taste to create your portrait
+                  </p>
+                  <button
+                    onClick={analyzeMusicTaste}
+                    disabled={!hasAnyService || isAnalyzing}
+                    className={`px-6 py-3 rounded-lg font-medium transition ${
+                      hasAnyService && !isAnalyzing
+                        ? 'bg-white text-black hover:bg-gray-200'
+                        : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {isAnalyzing ? (
+                      <span className="flex items-center space-x-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Analyzing...</span>
                       </span>
-                    ))}
+                    ) : (
+                      'Analyze Music'
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-gray-900 rounded-lg p-6">
+                    <h4 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+                      <TrendingUp className="w-5 h-5" />
+                      <span>Top Tracks</span>
+                    </h4>
+                    <div className="space-y-2">
+                      {musicProfile.unifiedTopTracks?.slice(0, 5).map((track, i) => (
+                        <div key={i} className="text-sm">
+                          <span className="text-gray-400">{i + 1}.</span> {track.name}
+                        </div>
+                      )) || <p className="text-gray-400">No data</p>}
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-900 rounded-lg p-6">
+                    <h4 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+                      <Mic2 className="w-5 h-5" />
+                      <span>Top Artists</span>
+                    </h4>
+                    <div className="space-y-2">
+                      {musicProfile.unifiedTopArtists?.slice(0, 5).map((artist, i) => (
+                        <div key={i} className="text-sm">
+                          <span className="text-gray-400">{i + 1}.</span> {artist.name}
+                        </div>
+                      )) || <p className="text-gray-400">No data</p>}
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-900 rounded-lg p-6">
+                    <h4 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+                      <Hash className="w-5 h-5" />
+                      <span>Top Genres</span>
+                    </h4>
+                    <div className="space-y-2">
+                      {musicProfile.unifiedTopGenres?.slice(0, 5).map((genre, i) => (
+                        <div key={i} className="text-sm">
+                          <span className="text-gray-400">{i + 1}.</span> {genre}
+                        </div>
+                      )) || <p className="text-gray-400">No data</p>}
+                    </div>
                   </div>
                 </div>
               )}
-              
-              <button
-                onClick={generateMusicProfile}
-                className="mt-6 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
-              >
-                Refresh Portrait
-              </button>
+
+              {musicProfile && (
+                <div className="text-center mt-6">
+                  <button
+                    onClick={analyzeMusicTaste}
+                    disabled={isAnalyzing}
+                    className="px-6 py-3 bg-white text-black rounded-lg font-medium hover:bg-gray-200 transition"
+                  >
+                    {isAnalyzing ? (
+                      <span className="flex items-center space-x-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Re-analyzing...</span>
+                      </span>
+                    ) : (
+                      'Update Portrait'
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'identity' && (
+            <div className="bg-gray-900 rounded-lg p-6">
+              <h3 className="text-xl font-semibold mb-4">World ID Verification</h3>
+              {worldId ? (
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2 text-green-400">
+                    <CheckCircle className="w-5 h-5" />
+                    <span>Verified with World ID</span>
+                  </div>
+                  <p className="text-gray-400 text-sm">ID: {worldId}</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-gray-400">
+                    Verify your identity with World ID to participate in voting
+                  </p>
+                  <WorldIDWidget 
+                    onSuccess={(id: string) => {
+                      setWorldId(id);
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
-
-      {activeTab === 'parties' && (
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-xl font-semibold mb-4">My Parties</h2>
-          <p className="text-gray-600">Party feature coming soon...</p>
-        </div>
-      )}
-    </main>
+      </div>
+    </div>
   );
 }
