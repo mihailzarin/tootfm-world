@@ -12,18 +12,11 @@ export async function GET(req: Request) {
   console.log('Code:', code ? 'present' : 'missing');
   console.log('Error:', error);
   
-  // Проверяем переменные окружения
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
   const redirectUri = process.env.NODE_ENV === 'production' 
     ? 'https://tootfm.world/api/spotify/callback'
     : 'http://localhost:3000/api/spotify/callback';
-  
-  console.log('Environment check:');
-  console.log('- Client ID:', clientId ? 'present' : 'MISSING!');
-  console.log('- Client Secret:', clientSecret ? 'present' : 'MISSING!');
-  console.log('- Redirect URI:', redirectUri);
-  console.log('- NODE_ENV:', process.env.NODE_ENV);
   
   if (!clientId || !clientSecret) {
     console.error('Missing Spotify credentials!');
@@ -31,41 +24,52 @@ export async function GET(req: Request) {
   }
   
   if (error) {
-    console.log('User denied authorization');
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=spotify_denied`);
   }
   
   if (!code) {
-    console.log('No code in callback');
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=no_code`);
   }
   
   try {
+    // Получаем сессию
     const session = await getServerSession(authOptions);
-    console.log('Session exists:', !!session);
-    console.log('Session user:', session?.user);
+    console.log('Session:', JSON.stringify(session?.user));
     
     if (!session?.user?.email) {
       console.log('No session found');
       return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/login`);
     }
     
-    // Находим пользователя по email, а не по session.user.id
+    // Находим пользователя в БД по email
     const dbUser = await prisma.user.findUnique({
       where: { email: session.user.email }
     });
     
     if (!dbUser) {
-      console.error('User not found in database for email:', session.user.email);
-      return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=user_not_found`);
+      console.error('User not found in DB:', session.user.email);
+      // Создаём пользователя если его нет
+      const newUser = await prisma.user.create({
+        data: {
+          email: session.user.email,
+          name: session.user.name || '',
+          image: session.user.image || null,
+        }
+      });
+      console.log('Created new user:', newUser.id);
     }
     
-    console.log('Found user in DB with ID:', dbUser.id);
+    const userId = dbUser?.id || (await prisma.user.findUnique({
+      where: { email: session.user.email }
+    }))?.id;
+    
+    if (!userId) {
+      throw new Error('Could not get user ID');
+    }
+    
+    console.log('Using userId:', userId);
     
     // Обмениваем код на токены
-    console.log('Exchanging code for tokens...');
-    console.log('Using redirect_uri:', redirectUri);
-    
     const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
       method: 'POST',
       headers: {
@@ -81,26 +85,16 @@ export async function GET(req: Request) {
       })
     });
     
-    const responseText = await tokenResponse.text();
-    console.log('Token response status:', tokenResponse.status);
-    
     if (!tokenResponse.ok) {
-      console.error('Token exchange failed:', responseText);
-      try {
-        const errorData = JSON.parse(responseText);
-        console.error('Spotify error:', errorData.error, errorData.error_description);
-      } catch {
-        console.error('Raw error:', responseText);
-      }
+      const errorText = await tokenResponse.text();
+      console.error('Token exchange failed:', errorText);
       return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=token_failed`);
     }
     
-    const tokens = JSON.parse(responseText);
-    console.log('Tokens received successfully');
-    console.log('Access token expires in:', tokens.expires_in, 'seconds');
+    const tokens = await tokenResponse.json();
+    console.log('Tokens received');
     
-    // Получаем профиль
-    console.log('Fetching Spotify profile...');
+    // Получаем профиль Spotify
     const profileResponse = await fetch('https://api.spotify.com/v1/me', {
       headers: {
         'Authorization': `Bearer ${tokens.access_token}`
@@ -108,63 +102,47 @@ export async function GET(req: Request) {
     });
     
     if (!profileResponse.ok) {
-      const profileError = await profileResponse.text();
-      console.error('Profile fetch failed:', profileError);
+      console.error('Profile fetch failed');
       return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=profile_failed`);
     }
     
     const profile = await profileResponse.json();
-    console.log('Spotify profile fetched:', {
-      id: profile.id,
-      display_name: profile.display_name,
-      email: profile.email,
-      product: profile.product
+    console.log('Spotify profile:', profile.id);
+    
+    // Сохраняем в БД
+    const existing = await prisma.musicService.findFirst({
+      where: {
+        userId: userId,
+        service: 'SPOTIFY'
+      }
     });
     
-    // Сохраняем в базу данных с правильным userId
-    console.log('Saving to database with userId:', dbUser.id);
-    
-    try {
-      // Сначала пробуем найти существующую запись
-      const existing = await prisma.musicService.findFirst({
-        where: {
-          userId: dbUser.id,
-          service: 'SPOTIFY'
+    if (existing) {
+      await prisma.musicService.update({
+        where: { id: existing.id },
+        data: {
+          spotifyId: profile.id,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || existing.refreshToken,
+          tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
+          isActive: true,
+          lastSynced: new Date()
         }
       });
-      
-      if (existing) {
-        console.log('Updating existing record with id:', existing.id);
-        await prisma.musicService.update({
-          where: { id: existing.id },
-          data: {
-            spotifyId: profile.id,
-            accessToken: tokens.access_token,
-            refreshToken: tokens.refresh_token || existing.refreshToken,
-            tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
-            isActive: true,
-            lastSynced: new Date()
-          }
-        });
-        console.log('Updated existing Spotify connection');
-      } else {
-        console.log('Creating new record for userId:', dbUser.id);
-        await prisma.musicService.create({
-          data: {
-            userId: dbUser.id,  // Используем ID из базы данных
-            service: 'SPOTIFY',
-            spotifyId: profile.id,
-            accessToken: tokens.access_token,
-            refreshToken: tokens.refresh_token,
-            tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
-            isActive: true
-          }
-        });
-        console.log('Created new Spotify connection');
-      }
-    } catch (dbError) {
-      console.error('Database operation failed:', dbError);
-      throw dbError;
+      console.log('Updated Spotify connection');
+    } else {
+      await prisma.musicService.create({
+        data: {
+          userId: userId,
+          service: 'SPOTIFY',
+          spotifyId: profile.id,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
+          isActive: true
+        }
+      });
+      console.log('Created Spotify connection');
     }
     
     console.log('✅ Spotify connected successfully');
@@ -172,8 +150,6 @@ export async function GET(req: Request) {
     
   } catch (error) {
     console.error('❌ Callback error:', error);
-    console.error('Error details:', error instanceof Error ? error.message : 'Unknown');
-    console.error('Error stack:', error instanceof Error ? error.stack : '');
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=spotify_error`);
   }
 }
