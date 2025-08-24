@@ -1,28 +1,51 @@
-import NextAuth from "next-auth";
-import { authOptions } from "@/lib/auth";
+import NextAuth from 'next-auth';
+import GoogleProvider from 'next-auth/providers/google';
+import type { NextAuthOptions } from 'next-auth';
+
+const authOptions: NextAuthOptions = {
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    })
+  ],
+  
+  callbacks: {
+    async signIn({ user, account, profile }: any) {
+      console.log('SignIn attempt:', user?.email);
+      return true;
+    },
+    
+    async jwt({ token, user }: any) {
+      if (user) {
+        token.id = user.id;
+        token.email = user.email;
+      }
+      return token;
+    },
+    
+    async session({ session, token }: any) {
+      if (session?.user) {
+        session.user.id = token.sub || '';
+        session.user.email = token.email || '';
+      }
+      return session;
+    },
+    
+    async redirect({ url, baseUrl }: any) {
+      return `${baseUrl}/profile`;
+    }
+  },
+  
+  pages: {
+    signIn: '/login',
+    error: '/login',
+  },
+  
+  secret: process.env.NEXTAUTH_SECRET!,
+  debug: true,
+};
 
 const handler = NextAuth(authOptions);
-
-// Runtime environment validation
-if (process.env.NODE_ENV === 'development') {
-  const requiredEnvVars = {
-    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
-    SPOTIFY_CLIENT_ID: process.env.SPOTIFY_CLIENT_ID,
-    SPOTIFY_CLIENT_SECRET: process.env.SPOTIFY_CLIENT_SECRET,
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-  };
-
-  const missingEnvVars = Object.entries(requiredEnvVars)
-    .filter(([_, value]) => !value)
-    .map(([key]) => key);
-
-  if (missingEnvVars.length > 0) {
-    console.error("❌ Missing environment variables:", missingEnvVars);
-  } else {
-    console.log("✅ All NextAuth environment variables are set");
-  }
-}
 
 export { handler as GET, handler as POST };
