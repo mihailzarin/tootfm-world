@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    const formattedParties = parties.map(party => ({
+    const formattedParties = parties.map((party: any) => ({
       code: party.code,
       name: party.name,
       description: party.description,
