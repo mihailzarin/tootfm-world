@@ -14,48 +14,51 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, account, profile }: any) {
       console.log('SignIn attempt:', user?.email);
       
-      if (!user?.email) return false;
-      
-      try {
-        // Создаём или находим пользователя в БД
-        const dbUser = await prisma.user.upsert({
-          where: { email: user.email },
-          create: {
-            email: user.email,
-            name: user.name || '',
-            image: user.image || null,
-            googleId: account?.providerAccountId || null,
-          },
-          update: {
-            name: user.name || '',
-            image: user.image || null,
-            googleId: account?.providerAccountId || null,
-          }
-        });
-        
-        console.log('User saved to DB:', dbUser.id);
-        return true;
-      } catch (error) {
-        console.error('Error saving user to DB:', error);
-        return false;
+      // Просто разрешаем вход всем пользователям Google
+      if (user?.email) {
+        try {
+          // Создаём или обновляем пользователя
+          const dbUser = await prisma.user.upsert({
+            where: { email: user.email },
+            create: {
+              email: user.email,
+              name: user.name || '',
+              image: user.image || null,
+              googleId: account?.providerAccountId || null,
+            },
+            update: {
+              name: user.name || '',
+              image: user.image || null,
+              lastLogin: new Date(),
+            }
+          });
+          
+          console.log('User upserted:', dbUser.id);
+        } catch (error) {
+          console.error('Error with user upsert:', error);
+          // Но всё равно разрешаем вход
+        }
       }
+      
+      return true; // ВСЕГДА разрешаем вход
     },
     
-    async jwt({ token, user, account }: any) {
-      // При первом входе сохраняем email в токен
-      if (user) {
+    async jwt({ token, user }: any) {
+      if (user?.email) {
         token.email = user.email;
         token.name = user.name;
         token.image = user.image;
         
-        // Получаем ID из БД
-        if (user.email) {
+        // Пробуем получить userId из БД
+        try {
           const dbUser = await prisma.user.findUnique({
             where: { email: user.email }
           });
           if (dbUser) {
             token.userId = dbUser.id;
           }
+        } catch (error) {
+          console.error('Error getting userId:', error);
         }
       }
       return token;
@@ -72,7 +75,11 @@ export const authOptions: NextAuthOptions = {
     },
     
     async redirect({ url, baseUrl }: any) {
-      return `${baseUrl}/profile`;
+      // После входа всегда на профиль
+      if (url === '/login' || url === baseUrl) {
+        return `${baseUrl}/profile`;
+      }
+      return url;
     }
   },
   
@@ -87,5 +94,5 @@ export const authOptions: NextAuthOptions = {
   },
   
   secret: process.env.NEXTAUTH_SECRET!,
-  debug: true,
+  debug: false, // Отключаем debug в продакшене
 };
