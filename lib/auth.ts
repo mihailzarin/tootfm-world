@@ -10,58 +10,61 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          prompt: "consent",
-          access_type: "offline",
-          response_type: "code"
-        }
-      }
     })
   ],
   
   callbacks: {
-    async session({ session, user }) {
-      // Добавляем user.id в сессию
-      if (session.user) {
-        session.user.id = user.id;
+    async signIn({ user, account, profile }: any) {
+      console.log('SignIn attempt:', user?.email);
+      
+      // Создаем или обновляем пользователя в БД
+      if (account?.provider === 'google') {
+        try {
+          await prisma.user.upsert({
+            where: { email: user.email },
+            update: {
+              name: user.name,
+              image: user.image,
+            },
+            create: {
+              email: user.email,
+              name: user.name,
+              image: user.image,
+              googleId: account.providerAccountId,
+            }
+          });
+          return true;
+        } catch (error) {
+          console.error('Error saving user:', error);
+          return false;
+        }
+      }
+      return true;
+    },
+    
+    async jwt({ token, user, account }: any) {
+      // При первом входе добавляем ID из БД
+      if (user) {
+        const dbUser = await prisma.user.findUnique({
+          where: { email: user.email }
+        });
+        token.id = dbUser?.id || user.id;
+        token.email = user.email;
+      }
+      return token;
+    },
+    
+    async session({ session, token }: any) {
+      // Добавляем ID пользователя в сессию
+      if (session?.user) {
+        session.user.id = token.id || token.sub || '';
+        session.user.email = token.email || '';
       }
       return session;
     },
     
-    async signIn({ user, account, profile }) {
-      // Логируем для отладки
-      console.log('🔐 Google SignIn:', {
-        email: user.email,
-        provider: account?.provider,
-        id: account?.providerAccountId
-      });
-      
-      // Обновляем googleId если нужно
-      if (user.email && account?.provider === 'google') {
-        try {
-          await prisma.user.update({
-            where: { email: user.email },
-            data: { 
-              googleId: account.providerAccountId,
-              verified: true 
-            }
-          });
-        } catch (error) {
-          // Пользователь ещё не создан, это нормально
-        }
-      }
-      
-      return true;
-    }
-  },
-  
-  events: {
-    async signIn({ user, account }) {
-      console.log('✅ User signed in:', user.email);
-    },
-    async signOut({ session }) {
-      console.log('👋 User signed out');
+    async redirect({ url, baseUrl }: any) {
+      return `${baseUrl}/profile`;
     }
   },
   
@@ -72,7 +75,7 @@ export const authOptions: NextAuthOptions = {
   
   session: {
     strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 30 * 24 * 60 * 60, // 30 дней
   },
   
   secret: process.env.NEXTAUTH_SECRET!,

@@ -1,51 +1,35 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
-// ========================================
-// ОСНОВНЫЕ МОДЕЛИ ПОЛЬЗОВАТЕЛЕЙ
-// ========================================
-
 model User {
-  id            String    @id @default(cuid())
-  email         String?   @unique
-  emailVerified DateTime?
-  name          String?
-  image         String?
-  
-  // Дополнительные поля для tootFM
-  worldId       String?   @unique
-  googleId      String?   @unique
-  spotifyId     String?   @unique  // НОВОЕ: для быстрого поиска
+  id            String         @id @default(cuid())
+  worldId       String?        @unique
+  verified      Boolean        @default(false)
   displayName   String?
   avatar        String?
-  verified      Boolean   @default(false)
-  
-  // Связи
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  email         String?        @unique
+  emailVerified DateTime?
+  googleId      String?        @unique
+  image         String?
+  name          String?
+  spotifyId     String?        @unique
   accounts      Account[]
-  sessions      Session[]
   musicProfile  MusicProfile?
   musicServices MusicService[]
-  parties       Party[]       @relation("PartyCreator")
+  parties       Party[]        @relation("PartyCreator")
   memberships   PartyMember[]
+  sessions      Session[]
   votes         Vote[]
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
 }
-
-// ========================================
-// NEXTAUTH МОДЕЛИ (ОБЯЗАТЕЛЬНЫЕ!)
-// ========================================
 
 model Account {
   id                String  @id @default(cuid())
@@ -53,14 +37,13 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-  
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
@@ -73,7 +56,7 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([userId])
 }
 
@@ -85,68 +68,129 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// ========================================
-// МУЗЫКАЛЬНЫЕ ПРОФИЛИ И СЕРВИСЫ
-// ========================================
-
 model MusicProfile {
-  id              String   @id @default(cuid())
-  userId          String   @unique
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Объединенные данные из всех сервисов
-  unifiedTopTracks    Json?    // Дедуплицированные топ треки
-  unifiedTopArtists   Json?    // Объединенные топ артисты
-  unifiedTopGenres    Json?    // Взвешенные жанры
-  
-  // Данные по сервисам (кэш)
-  spotifyData         Json?    // top-tracks, top-artists, saved
-  lastfmData          Json?    // loved, top-albums, top-artists
-  appleData           Json?    // heavy-rotation, recent-played
-  
-  // Аналитика
-  musicPersonality    String?  // "Eclectic Explorer 🌐"
-  dominantGenres      Json?    // ["indie rock", "electronic"]
-  energyLevel         Float?   // 0-100
-  diversityScore      Float?   // 0-100
-  mainstreamScore     Float?   // 0-100
-  
-  lastAnalyzed        DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  unifiedTopTracks  Json?
+  unifiedTopArtists Json?
+  unifiedTopGenres  Json?
+  spotifyData       Json?
+  lastfmData        Json?
+  appleData         Json?
+  musicPersonality  String?
+  dominantGenres    Json?
+  energyLevel       Float?
+  diversityScore    Float?
+  mainstreamScore   Float?
+  lastAnalyzed      DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model MusicService {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  service       ServiceType  // SPOTIFY, LASTFM, APPLE
-  
-  // Spotify специфичные поля
-  spotifyId     String?
-  accessToken   String?  @db.Text // Зашифрованный
-  refreshToken  String?  @db.Text // Зашифрованный
-  tokenExpiry   DateTime?
-  
-  // Last.fm специфичные поля
+  id             String      @id @default(cuid())
+  userId         String
+  service        ServiceType
+  spotifyId      String?
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiry    DateTime?
   lastfmUsername String?
-  lastfmSession  String?  // Session key
-  
-  // Apple Music специфичные поля  
+  lastfmSession  String?
   appleUserId    String?
-  appleToken     String?  @db.Text
-  
-  // Общие поля
-  isActive       Boolean  @default(true)
+  appleToken     String?
+  isActive       Boolean     @default(true)
   lastSynced     DateTime?
-  
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([userId, service])
   @@index([userId])
   @@index([service])
+}
+
+model Party {
+  id                String        @id @default(cuid())
+  code              String        @unique
+  name              String
+  description       String?
+  isActive          Boolean       @default(true)
+  creatorId         String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  applePlaylistId   String?
+  maxMembers        Int           @default(50)
+  partyRadio        Boolean       @default(false)
+  playlistData      Json?
+  playlistGenerated Boolean       @default(false)
+  spotifyPlaylistId String?
+  totalMembers      Int           @default(1)
+  totalTracks       Int           @default(0)
+  totalVotes        Int           @default(0)
+  votingEnabled     Boolean       @default(false)
+  creator           User          @relation("PartyCreator", fields: [creatorId], references: [id])
+  members           PartyMember[]
+  tracks            Track[]
+
+  @@index([code])
+  @@index([creatorId])
+}
+
+model PartyMember {
+  id                String     @id @default(cuid())
+  userId            String
+  partyId           String
+  joinedAt          DateTime   @default(now())
+  contributionScore Float?
+  role              MemberRole @default(MEMBER)
+  party             Party      @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([partyId, userId])
+  @@index([partyId])
+  @@index([userId])
+}
+
+model Track {
+  id         String   @id @default(cuid())
+  spotifyId  String?
+  name       String
+  artist     String
+  album      String?
+  albumArt   String?
+  duration   Int
+  partyId    String
+  voteCount  Int      @default(0)
+  appleId    String?
+  createdAt  DateTime @default(now())
+  isrc       String?
+  lastfmMbid String?
+  matchScore Float
+  position   Int
+  previewUrl String?
+  sources    Json
+  party      Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  votes      Vote[]
+
+  @@index([partyId, position])
+  @@index([isrc])
+  @@index([spotifyId])
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  userId    String
+  trackId   String
+  value     Int
+  createdAt DateTime @default(now())
+  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, trackId])
+  @@index([userId])
+  @@index([trackId])
 }
 
 enum ServiceType {
@@ -155,125 +199,7 @@ enum ServiceType {
   APPLE
 }
 
-// ========================================
-// ВЕЧЕРИНКИ И ПЛЕЙЛИСТЫ
-// ========================================
-
-model Party {
-  id            String   @id @default(cuid())
-  code          String   @unique // 6-символьный код
-  name          String
-  description   String?
-  
-  creatorId     String
-  creator       User     @relation("PartyCreator", fields: [creatorId], references: [id])
-  
-  // Настройки
-  isActive      Boolean  @default(true)
-  maxMembers    Int      @default(50)
-  votingEnabled Boolean  @default(false) // Требует World ID
-  partyRadio    Boolean  @default(false) // Динамический режим
-  
-  // Сгенерированный плейлист
-  playlistGenerated Boolean @default(false)
-  playlistData      Json?   // Кэш сгенерированного плейлиста
-  spotifyPlaylistId String? // ID экспортированного плейлиста
-  applePlaylistId   String? // ID экспортированного плейлиста
-  
-  // Статистика
-  totalMembers  Int      @default(1)
-  totalTracks   Int      @default(0)
-  totalVotes    Int      @default(0)
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  // Связи
-  members       PartyMember[]
-  tracks        Track[]
-  
-  @@index([code])
-  @@index([creatorId])
-}
-
-model PartyMember {
-  id        String   @id @default(cuid())
-  
-  partyId   String
-  party     Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  role      MemberRole @default(MEMBER)
-  joinedAt  DateTime @default(now())
-  
-  // Вклад в плейлист
-  contributionScore Float? // Насколько учтены вкусы участника
-  
-  @@unique([partyId, userId])
-  @@index([partyId])
-  @@index([userId])
-}
-
 enum MemberRole {
   HOST
   MEMBER
-}
-
-model Track {
-  id            String   @id @default(cuid())
-  
-  // Универсальная идентификация
-  isrc          String?  // International Standard Recording Code
-  spotifyId     String?
-  appleId       String?
-  lastfmMbid    String?  // MusicBrainz ID
-  
-  // Метаданные
-  name          String
-  artist        String
-  album         String?
-  albumArt      String?
-  duration      Int      // миллисекунды
-  previewUrl    String?  // 30-сек превью
-  
-  // Источники (откуда пришел трек)
-  sources       Json     // ["spotify:user1", "lastfm:user2", "apple:user3"]
-  matchScore    Float    // Насколько трек подходит всем (0-100)
-  
-  // Party связь
-  partyId       String
-  party         Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  
-  // Голосование (если включено)
-  voteCount     Int      @default(0)
-  votes         Vote[]
-  
-  // Позиция в плейлисте
-  position      Int
-  
-  createdAt     DateTime @default(now())
-  
-  @@index([partyId, position])
-  @@index([isrc])
-  @@index([spotifyId])
-}
-
-model Vote {
-  id        String   @id @default(cuid())
-  
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  trackId   String
-  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
-  
-  value     Int      // +1 или -1
-  
-  createdAt DateTime @default(now())
-  
-  @@unique([userId, trackId])
-  @@index([userId])
-  @@index([trackId])
 }
