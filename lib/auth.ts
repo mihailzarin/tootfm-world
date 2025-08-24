@@ -1,10 +1,8 @@
 import { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
-import { PrismaAdapter } from '@next-auth/prisma-adapter';
-import { prisma } from '@/lib/prisma';
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  // УБИРАЕМ adapter: PrismaAdapter(prisma),
   
   providers: [
     GoogleProvider({
@@ -16,49 +14,25 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account, profile }: any) {
       console.log('SignIn attempt:', user?.email);
-      
-      // Создаем или обновляем пользователя в БД
-      if (account?.provider === 'google') {
-        try {
-          await prisma.user.upsert({
-            where: { email: user.email },
-            update: {
-              name: user.name,
-              image: user.image,
-            },
-            create: {
-              email: user.email,
-              name: user.name,
-              image: user.image,
-              googleId: account.providerAccountId,
-            }
-          });
-          return true;
-        } catch (error) {
-          console.error('Error saving user:', error);
-          return false;
-        }
-      }
       return true;
     },
     
     async jwt({ token, user, account }: any) {
-      // При первом входе добавляем ID из БД
       if (user) {
-        const dbUser = await prisma.user.findUnique({
-          where: { email: user.email }
-        });
-        token.id = dbUser?.id || user.id;
+        token.id = user.id || token.sub;
         token.email = user.email;
+        token.name = user.name;
+        token.image = user.image;
       }
       return token;
     },
     
     async session({ session, token }: any) {
-      // Добавляем ID пользователя в сессию
       if (session?.user) {
-        session.user.id = token.id || token.sub || '';
+        session.user.id = token.sub || '';
         session.user.email = token.email || '';
+        session.user.name = token.name || '';
+        session.user.image = token.image || '';
       }
       return session;
     },
@@ -79,5 +53,5 @@ export const authOptions: NextAuthOptions = {
   },
   
   secret: process.env.NEXTAUTH_SECRET!,
-  debug: process.env.NODE_ENV === 'development',
+  debug: true,
 };
