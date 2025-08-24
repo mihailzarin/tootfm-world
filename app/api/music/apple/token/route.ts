@@ -1,23 +1,19 @@
-// app/api/music/apple/token/route.ts
 import { NextResponse } from 'next/server';
-import { generateAppleMusicToken } from '@/src/lib/music-services/apple/token-generator';
+import { generateAppleMusicToken } from '@/lib/apple-music/token-generator';
 
 export async function GET() {
   try {
-    // Генерируем developer token
     const token = generateAppleMusicToken();
-    
     return NextResponse.json({ 
       success: true,
-      token,
-      expiresIn: 15552000 // 180 дней в секундах
+      token 
     });
   } catch (error: any) {
-    console.error('❌ Ошибка генерации Apple Music токена:', error);
+    console.error('Token generation failed:', error);
     return NextResponse.json(
       { 
         success: false,
-        error: error.message || 'Failed to generate token' 
+        error: error.message 
       },
       { status: 500 }
     );

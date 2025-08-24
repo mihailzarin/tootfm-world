@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import AppleMusicConnect from "@/src/components/music-services/AppleMusicConnect";
+import AppleMusicConnect from "@/components/music-services/AppleMusicConnect";
 
 export default function ProfileClient() {
   const router = useRouter();
@@ -22,6 +22,8 @@ export default function ProfileClient() {
     appleMusic: false
   });
 
+
+  
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
@@ -439,16 +441,7 @@ export default function ProfileClient() {
                 </div>
               </div>
 
-              <AppleMusicConnect 
-                onConnectionChange={(connected) => {
-                  setAppleMusicConnected(connected);
-                  setConnectingServices(prev => ({ ...prev, appleMusic: false }));
-                  if (connected) {
-                    localStorage.removeItem('musicProfile');
-                    localStorage.removeItem('musicProfileTimestamp');
-                  }
-                }}
-              />
+              <AppleMusicConnect />
 
               <div className="bg-gradient-to-r from-orange-900/30 to-orange-700/30 rounded-xl p-4 border border-orange-500/20 opacity-60">
                 <div className="flex justify-between items-center">

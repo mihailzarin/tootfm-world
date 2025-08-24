@@ -6,7 +6,7 @@ import { Music, User, LogOut, Loader2 } from 'lucide-react';
 import SpotifyConnect from '@/components/SpotifyConnect';
 import LastFmConnect from '@/components/music-services/LastFmConnect';
 import CreatePartyButton from '@/components/CreatePartyButton';
-import AppleMusicConnect from '@/src/components/music-services/AppleMusicConnect';
+import AppleMusicConnect from '@/components/music-services/AppleMusicConnect';
 import MusicPortrait from '@/components/profile/MusicPortrait';
 
 export default function ProfilePage() {
