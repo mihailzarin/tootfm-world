@@ -12,6 +12,24 @@ export async function GET(req: Request) {
   console.log('Code:', code ? 'present' : 'missing');
   console.log('Error:', error);
   
+  // Проверяем переменные окружения
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+  const redirectUri = process.env.NODE_ENV === 'production' 
+    ? 'https://tootfm.world/api/spotify/callback'
+    : 'http://localhost:3000/api/spotify/callback';
+  
+  console.log('Environment check:');
+  console.log('- Client ID:', clientId ? 'present' : 'MISSING!');
+  console.log('- Client Secret:', clientSecret ? 'present' : 'MISSING!');
+  console.log('- Redirect URI:', redirectUri);
+  console.log('- NODE_ENV:', process.env.NODE_ENV);
+  
+  if (!clientId || !clientSecret) {
+    console.error('Missing Spotify credentials!');
+    return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=config_error`);
+  }
+  
   if (error) {
     console.log('User denied authorization');
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=spotify_denied`);
@@ -34,31 +52,44 @@ export async function GET(req: Request) {
     
     // Обмениваем код на токены
     console.log('Exchanging code for tokens...');
+    console.log('Using redirect_uri:', redirectUri);
+    
     const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Authorization': `Basic ${Buffer.from(
-          `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+          `${clientId}:${clientSecret}`
         ).toString('base64')}`
       },
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code: code,
-        redirect_uri: process.env.SPOTIFY_REDIRECT_URI || 'https://tootfm.world/api/spotify/callback'
+        redirect_uri: redirectUri  // Используем правильную переменную
       })
     });
     
+    const responseText = await tokenResponse.text();
+    console.log('Token response status:', tokenResponse.status);
+    
     if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      console.error('Token exchange failed:', errorText);
+      console.error('Token exchange failed:', responseText);
+      // Парсим ошибку от Spotify
+      try {
+        const errorData = JSON.parse(responseText);
+        console.error('Spotify error:', errorData.error, errorData.error_description);
+      } catch {
+        console.error('Raw error:', responseText);
+      }
       return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=token_failed`);
     }
     
-    const tokens = await tokenResponse.json();
-    console.log('Tokens received');
+    const tokens = JSON.parse(responseText);
+    console.log('Tokens received successfully');
+    console.log('Access token expires in:', tokens.expires_in, 'seconds');
     
     // Получаем профиль
+    console.log('Fetching Spotify profile...');
     const profileResponse = await fetch('https://api.spotify.com/v1/me', {
       headers: {
         'Authorization': `Bearer ${tokens.access_token}`
@@ -66,14 +97,20 @@ export async function GET(req: Request) {
     });
     
     if (!profileResponse.ok) {
-      console.error('Profile fetch failed');
+      const profileError = await profileResponse.text();
+      console.error('Profile fetch failed:', profileError);
       return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=profile_failed`);
     }
     
     const profile = await profileResponse.json();
-    console.log('Spotify profile:', profile.id);
+    console.log('Spotify profile fetched:', {
+      id: profile.id,
+      display_name: profile.display_name,
+      email: profile.email,
+      product: profile.product // free или premium
+    });
     
-    // ИСПОЛЬЗУЕМ findFirst + update/create вместо upsert
+    // Сохраняем в базу данных
     console.log('Saving to database...');
     
     const existing = await prisma.musicService.findFirst({
@@ -89,10 +126,17 @@ export async function GET(req: Request) {
         data: {
           spotifyId: profile.id,
           accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token,
+          refreshToken: tokens.refresh_token || existing.refreshToken, // Spotify не всегда возвращает refresh_token
           tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
           isActive: true,
-          lastSynced: new Date()
+          lastSynced: new Date(),
+          // Сохраняем дополнительную информацию
+          metadata: {
+            displayName: profile.display_name,
+            email: profile.email,
+            product: profile.product,
+            country: profile.country
+          }
         }
       });
       console.log('Updated existing Spotify connection');
@@ -105,17 +149,23 @@ export async function GET(req: Request) {
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
           tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
-          isActive: true
+          isActive: true,
+          metadata: {
+            displayName: profile.display_name,
+            email: profile.email,
+            product: profile.product,
+            country: profile.country
+          }
         }
       });
       console.log('Created new Spotify connection');
     }
     
     console.log('✅ Spotify connected successfully');
-    return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?spotify=connected`);
+    return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?spotify=connected&tab=services`);
     
   } catch (error) {
-    console.error('Callback error:', error);
+    console.error('❌ Callback error:', error);
     console.error('Error details:', error instanceof Error ? error.message : 'Unknown');
     console.error('Error stack:', error instanceof Error ? error.stack : '');
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/profile?error=spotify_error`);
